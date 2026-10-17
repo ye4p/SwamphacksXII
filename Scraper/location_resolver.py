@@ -1,6 +1,46 @@
 """Resolve event venues with Google Maps and preserve unresolved events."""
 
 import os  # Reads API keys from environment variables.
+import re
+
+if __package__:
+    from .runtime_utils import ScraperError, http_failure, retry_call, error_record
+    from .config import REQUEST_SECONDS, RETRY_ATTEMPTS
+else:
+    from runtime_utils import ScraperError, http_failure, retry_call, error_record
+    from config import REQUEST_SECONDS, RETRY_ATTEMPTS
+
+
+def place_matches(event, place, latitude, longitude):
+    """Conservative matching: a search result is a candidate, not proof of identity."""
+    def words(text):
+        aliases = {'st': 'street', 'rd': 'road', 'ave': 'avenue', 'blvd': 'boulevard',
+                   'dr': 'drive', 'fl': 'florida', 'uf': 'florida'}
+        return {aliases.get(word, word) for word in re.findall(r'[a-z0-9]+', text.casefold())
+                if word not in {'the', 'of', 'at'}}
+
+    address = place.get('formattedAddress', '')
+    city = event.get('city_text')
+    if city:
+        # Include a written state too: Gainesville, FL must not match another
+        # Gainesville in a different state merely because the city name agrees.
+        if not words(city).issubset(words(address)):
+            return False
+    if (not city or 'gainesville' in words(city)) and not (
+            29.45 <= latitude <= 29.85 and -82.6 <= longitude <= -82.1):
+        # Without explicit city evidence we assume Gainesville, not anywhere in
+        # the world. This broad city-area box is a guard, not a venue match.
+        return False
+    if event.get('address_text'):
+        requested = words(event['address_text'].split(',')[0])
+        return bool(requested) and requested.issubset(words(address))
+    venue = event.get('location') or ''
+    # Room identifiers remain in output, but do not form part of building identity.
+    venue = re.split(r'\b(?:room|rm|suite)\b|#', venue, flags=re.I)[0]
+    requested = words(venue) - {'university', 'florida', 'gainesville'}
+    name = place.get('displayName', {}).get('text', '')
+    return bool(requested) and requested.issubset(words(name))
+
 
 
 def resolve_location(event):
@@ -26,26 +66,35 @@ def resolve_location(event):
     key = os.getenv("GOOGLE_MAPS_API_KEY")
     if not key:
         resolved.update(location_status="error",
+                        location_error_code="missing_maps_key",
                         location_warning="Set GOOGLE_MAPS_API_KEY and enable Places API (New).")
         return resolved
 
     try:
         # Ask for only the fields we need. The key stays in a request header.
-        with requests.post(
-            "https://places.googleapis.com/v1/places:searchText",
-            headers={"X-Goog-Api-Key": key,
-                     "X-Goog-FieldMask": "places.formattedAddress,places.location,places.pureServiceAreaBusiness,nextPageToken"},
-            json={"textQuery": query, "pageSize": 2,
-                  "includePureServiceAreaBusinesses": False},
-            timeout=30,
-        ) as response:
-            response.raise_for_status()
-            payload = response.json()
+        def lookup():
+            try:
+                with requests.post(
+                    "https://places.googleapis.com/v1/places:searchText",
+                    headers={"X-Goog-Api-Key": key,
+                        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location,places.pureServiceAreaBusiness,nextPageToken"},
+                    json={"textQuery": query, "pageSize": 2,
+                          "includePureServiceAreaBusinesses": False},
+                    allow_redirects=False, timeout=(5, REQUEST_SECONDS),
+                ) as response:
+                    if response.status_code != 200:
+                        raise http_failure("geocoding", response.status_code)
+                    return response.json()
+            except requests.Timeout:
+                raise ScraperError("geocoding", "timeout", "Maps lookup timed out.", True) from None
+            except requests.ConnectionError:
+                raise ScraperError("geocoding", "connection_error", "Maps connection failed.", True) from None
+        payload = retry_call(lookup, RETRY_ATTEMPTS)
         if not isinstance(payload, dict) or "error" in payload:
-            raise ValueError("Invalid Maps response")
+            raise ScraperError("geocoding", "invalid_response", "Maps returned an invalid response.")
         places = payload.get("places", [])
         if not isinstance(places, list):
-            raise ValueError("Invalid places list")
+            raise ScraperError("geocoding", "invalid_response", "Maps returned an invalid places list.")
         if not places:
             resolved.update(location_status="not_found", location_warning="No matching place found.")
         elif len(places) != 1 or payload.get("nextPageToken"):
@@ -61,13 +110,18 @@ def resolve_location(event):
                     or type(latitude) not in (int, float) or not -90 <= latitude <= 90
                     or type(longitude) not in (int, float) or not -180 <= longitude <= 180
                     or not isinstance(address, str) or not address.strip()):
-                raise ValueError("Incomplete or invalid place result")
-            resolved.update(address=address, latitude=latitude, longitude=longitude,
-                            location_status="resolved")
-    except (requests.RequestException, ValueError, TypeError, AttributeError):
+                raise ScraperError("geocoding", "invalid_coordinates", "Maps returned incomplete or invalid coordinates/address.")
+            if not place_matches(event, place, latitude, longitude):
+                resolved.update(location_status="ambiguous",
+                    location_warning="Returned place does not clearly match the source venue/address and city.")
+            else:
+                resolved.update(address=address, latitude=latitude, longitude=longitude,
+                                location_status="resolved")
+    except (ScraperError, requests.RequestException, ValueError, TypeError, AttributeError) as error:
         # Do not expose HTTP exception details, which could include credentials.
-        resolved.update(location_status="error",
-                        location_warning="Maps lookup failed; check API setup, quota, and connectivity.")
+        record = error_record(error, "geocoding")
+        resolved.update(location_status="error", location_warning=record["message"],
+                        location_error_code=record["code"])
     return resolved
 
 

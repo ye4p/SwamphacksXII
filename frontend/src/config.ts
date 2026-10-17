@@ -1,7 +1,7 @@
 export const config = {
   marker: {
     size: 29,
-    eventColor: "#ef4444",
+    eventColor: "#598568",
     userColor: "#3b82f6",
   },
   map: {

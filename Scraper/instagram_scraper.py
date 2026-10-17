@@ -2,11 +2,18 @@
 
 import os  # Reads API keys from environment variables.
 import sys  # Sends progress messages to stderr, separate from JSON output.
+import re
+from datetime import timedelta
+from decimal import Decimal
 
 if __package__:
     from .config import CLUB_HANDLES, POSTS_PER_ACCOUNT, APIFY_ACTOR
+    from .config import APIFY_RUN_SECONDS, APIFY_MAX_CHARGE_USD, MAX_CLUBS, MAX_POSTS_PER_ACCOUNT
+    from .runtime_utils import ScraperError, error_record
 else:
     from config import CLUB_HANDLES, POSTS_PER_ACCOUNT, APIFY_ACTOR
+    from config import APIFY_RUN_SECONDS, APIFY_MAX_CHARGE_USD, MAX_CLUBS, MAX_POSTS_PER_ACCOUNT
+    from runtime_utils import ScraperError, error_record
 
 
 def get_image_urls(post):
@@ -35,6 +42,13 @@ def collect_posts():
                                  "Add club usernames to CLUB_HANDLES first."})
         return result
 
+    if (len(CLUB_HANDLES) > MAX_CLUBS or type(POSTS_PER_ACCOUNT) is not int
+            or not 1 <= POSTS_PER_ACCOUNT <= MAX_POSTS_PER_ACCOUNT
+            or any(not isinstance(handle, str) or not re.fullmatch(r"[A-Za-z0-9_.]{1,30}", handle)
+                   for handle in CLUB_HANDLES)):
+        result["errors"].append({"stage": "settings", "code": "invalid_config",
+            "message": "Check club usernames and configured club/post limits."})
+        return result
     token = os.getenv("APIFY_API_TOKEN")
     if not token:
         result["errors"].append({"stage": "settings", "message":
@@ -48,8 +62,10 @@ def collect_posts():
                                  "Install Apify: python -m pip install apify-client"})
         return result
 
-    client = ApifyClient(token)
-    for handle in CLUB_HANDLES:
+    # Do not automatically retry starting a billable job: a lost response may
+    # hide an already-started run. Read-only dataset requests can be retried later.
+    client = ApifyClient(token, max_retries=0, timeout_max=timedelta(seconds=APIFY_RUN_SECONDS + 15))
+    for handle in dict.fromkeys(CLUB_HANDLES):
         print(f"Collecting posts from @{handle} through Apify...", file=sys.stderr)
         try:
             # Each call starts a hosted job and may consume Apify credits.
@@ -57,26 +73,32 @@ def collect_posts():
                 "directUrls": [f"https://www.instagram.com/{handle}/"],
                 "resultsType": "posts",
                 "resultsLimit": POSTS_PER_ACCOUNT,
-            })
+            }, run_timeout=timedelta(seconds=APIFY_RUN_SECONDS),
+                wait_duration=timedelta(seconds=APIFY_RUN_SECONDS + 5),
+                max_total_charge_usd=Decimal(APIFY_MAX_CHARGE_USD),
+                max_items=POSTS_PER_ACCOUNT, restart_on_error=False, logger=None,
+                timeout=timedelta(seconds=APIFY_RUN_SECONDS + 15))
             # Apify SDK 3 returns a Run object, accessed with dots, not .get().
             if not run or run.status != "SUCCEEDED":
                 status = run.status if run else "UNKNOWN"
                 result["errors"].append({"stage": "collection",
+                    "code": "run_incomplete",
                     "organization_handle": handle,
                     "message": f"Apify run did not succeed: {status}"})
                 continue
             # A dataset is Apify's stored list of results for this run.
-            for post in client.dataset(run.default_dataset_id).iterate_items():
+            for post in client.dataset(run.default_dataset_id).iterate_items(limit=POSTS_PER_ACCOUNT, timeout=timedelta(seconds=30)):
                 if post.get("error"):
                     result["errors"].append({"stage": "collection",
                         "organization_handle": handle,
-                        "message": str(post.get("errorDescription") or post["error"])})
+                        "code": "actor_item_error", "message": "Apify reported a failed item; inspect its run logs."})
                     continue
                 image_urls = get_image_urls(post)
                 if not image_urls:
                     if post.get("type") != "Video":
                         result["errors"].append({"stage": "collection",
                             "organization_handle": handle,
+                            "code": "no_photo_urls",
                             "message": "Post has no identifiable photo URLs.",
                             "post_url": post.get("url")})
                     continue
@@ -89,11 +111,7 @@ def collect_posts():
                     "image_urls": image_urls,
                 })
         except Exception as error:
-            # Keep earlier results; avoid exception details containing credentials.
-            result["errors"].append({
-                "stage": "collection", "organization_handle": handle,
-                "message": f"Apify collection failed ({type(error).__name__}); "
-                           "check your token, credits, and Apify run logs.",
-            })
+            result["errors"].append({**error_record(error, "collection"),
+                "organization_handle": handle})
     return result
 

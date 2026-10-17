@@ -3,10 +3,12 @@ import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./index.css";
-import events from "./data/events";
+import hardcodedEvents from "./data/events";
 import type { Event } from "./types";
 import { config } from "./config";
 import EventPopup from "./components/EventPopup";
+import { useEvents } from "./hooks/useEvents";
+import { useEventDistances } from "./hooks/useEventDistances";
 
 const makeMarkerIcon = (html: string, size: number = config.marker.size) =>
   L.divIcon({
@@ -38,6 +40,15 @@ export default function App() {
   );
   const [userPosition, setUserPosition] = useState<[number, number] | null>(null);
 
+  const { events: storedEvents, setEvents } = useEvents();
+  const { distances: distances } = useEventDistances(storedEvents, userPosition);
+
+  useEffect(() => {
+    distances.forEach((d) => {
+      console.log("event id: ", d.eventId, " distance: ", d.distance);
+    })
+  }, [distances]);
+
   useEffect(() => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
@@ -50,6 +61,10 @@ export default function App() {
       () => {}
     );
   }, []);
+
+  useEffect(() => {
+    setEvents(hardcodedEvents);
+  }, [setEvents]);
 
   return (
     <MapContainer
@@ -71,7 +86,7 @@ export default function App() {
           </Popup>
         </Marker>
       )}
-      {events.map((e: Event) => (
+      {storedEvents.map((e: Event) => (
         <Marker key={e.id} position={[e.lat, e.lng]} icon={eventMarkerIcon}>
           <Popup>
             <EventPopup event={e} />

@@ -1,6 +1,7 @@
 """Download post images and connect Apify collection to Gemini extraction."""
 
 import os  # Reads API keys from environment variables.
+from datetime import date
 import sys  # Sends progress messages to stderr, separate from JSON output.
 
 if __package__:
@@ -9,12 +10,14 @@ if __package__:
     from .config import MAX_IMAGE_BYTES, MAX_IMAGES
     from .image_utils import download_image
     from .runtime_utils import ScraperError, error_record
+    from .database import fetch_events
 else:
     from gemini_extractor import extract_events
     from instagram_scraper import collect_posts
     from config import MAX_IMAGE_BYTES, MAX_IMAGES
     from image_utils import download_image
     from runtime_utils import ScraperError, error_record
+    from database import fetch_events
 
 
 def process_post(post):
@@ -53,6 +56,11 @@ def scrape_events():
         return {"posts": [], "errors": [{"stage": "settings", "code": "missing_dependency",
                 "message": "Install dependencies: python -m pip install requests google-genai"}]}
 
+    db_events = fetch_events(date.today().isoformat())
+    db_keys = set()
+    for event in db_events:
+        club = event.get("club") or event.get("organization") or event.get("organization_handle")
+        db_keys.add((str(club).casefold() if club is not None else None, event.get("date")))
     scraped = collect_posts()
     result = {"posts": [], "errors": list(scraped["errors"]), "processed_posts": 0}
     seen = set()
@@ -66,7 +74,13 @@ def scrape_events():
         try:
             processed = process_post(post)
             result["processed_posts"] += 1
-            # An empty event list means unrelated content, not a processing error.
+            filtered = []
+            for event in processed.get("events", []):
+                key = (str(post.get("organization_handle")).casefold(), event.get("date"))
+                if key in db_keys:
+                    continue
+                filtered.append(event)
+            processed["events"] = filtered
             if processed["events"]:
                 result["posts"].append(processed)
         except Exception as error:

@@ -7,3 +7,11 @@ Jinja2==3.1.6
 MarkupSafe==3.0.4
 python-dotenv==1.2.4
 Werkzeug==3.1.9
+
+# FastAPI auth backend
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+httpx>=0.28.0
+python-multipart>=0.0.9

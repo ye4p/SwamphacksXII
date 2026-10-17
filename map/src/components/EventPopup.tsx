@@ -1,16 +1,21 @@
-import type { CampusEvent } from "../types";
+import type { Event } from "../types";
 
 interface EventPopupProps {
-  event: CampusEvent;
+  event: Event;
 }
 
+
+
 export default function EventPopup({ event }: EventPopupProps) {
+
+  const is_food: Boolean = event.tags?.includes("food") ?? false
+
   return (
     <div className="event-popup">
       <h3>{event.title}</h3>
-      <div className="meta">{event.time}</div>
+      <div className="meta">{event.start_time}</div>
       <div className="meta">{event.description}</div>
-      <div className={`meta ${event.food ? "food" : ""}`}>{event.food ? "Food provided" : "No food"}</div>
+      {is_food && <div className={`meta food`}>{"Food provided"}</div>}
       <div className="tags">
         {event.tags.map((t) => (
           <span key={t} className="tag">{t}</span>

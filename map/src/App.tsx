@@ -4,32 +4,38 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./index.css";
 import events from "./data/events";
-import type { CampusEvent } from "./types";
+import type { Event } from "./types";
+import { config } from "./config";
 import EventPopup from "./components/EventPopup";
 
-const eventMarkerIcon = L.divIcon({
-  className: "",
-  html: '<div class="custom-marker"></div>',
-  iconSize: [34, 34],
-  iconAnchor: [17, 34],
-  popupAnchor: [0, -34],
-});
+const makeMarkerIcon = (html: string, size: number = config.marker.size) =>
+  L.divIcon({
+    className: "",
+    html,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size],
+    popupAnchor: [0, -size],
+  });
 
-const userMarkerIcon = L.divIcon({
-  className: "",
-  html: '<div class="user-marker"></div>',
-  iconSize: [34, 34],
-  iconAnchor: [17, 34],
-  popupAnchor: [0, -34],
-});
+const eventMarkerIcon = makeMarkerIcon(
+  `<div class="custom-marker" style="background:${config.marker.eventColor}"></div>`,
+  config.marker.size
+);
+
+const userMarkerIcon = makeMarkerIcon(
+  `<div class="user-marker" style="background:${config.marker.userColor}"></div>`,
+  config.marker.size
+);
 
 export default function App() {
   const apiKey = import.meta.env.VITE_CARTO_API;
   const tileUrl = apiKey
-    ? `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${apiKey}`
-    : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+    ? `${config.tileLayer.baseUrl}?key=${apiKey}`
+    : config.tileLayer.baseUrl;
 
-  const [center, setCenter] = useState<[number, number]>([29.6436, -82.3549]);
+  const [center, setCenter] = useState<[number, number]>(
+    config.map.defaultCenter
+  );
   const [userPosition, setUserPosition] = useState<[number, number] | null>(null);
 
   useEffect(() => {
@@ -46,8 +52,16 @@ export default function App() {
   }, []);
 
   return (
-    <MapContainer center={center} zoom={14} style={{ height: "100vh", width: "100%" }}>
-      <TileLayer attribution='&copy; OpenStreetMap contributors &copy; CARTO' url={tileUrl} subdomains="abcd" />
+    <MapContainer
+      center={center}
+      zoom={config.map.defaultZoom}
+      style={{ height: "100vh", width: "100%" }}
+    >
+      <TileLayer
+        attribution={config.tileLayer.attribution}
+        url={tileUrl}
+        subdomains={config.tileLayer.subdomains}
+      />
       {userPosition && (
         <Marker position={userPosition} icon={userMarkerIcon}>
           <Popup>
@@ -57,7 +71,7 @@ export default function App() {
           </Popup>
         </Marker>
       )}
-      {events.map((e: CampusEvent) => (
+      {events.map((e: Event) => (
         <Marker key={e.id} position={[e.lat, e.lng]} icon={eventMarkerIcon}>
           <Popup>
             <EventPopup event={e} />

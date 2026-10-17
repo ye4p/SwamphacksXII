@@ -2,10 +2,13 @@ import asyncio
 import json
 from datetime import datetime
 import asyncpg
+import os
 from typing import Optional, Dict, Any, Union, List
+from dotenv import load_dotenv
 
 
-CONNECTION = "postgres://tsdbadmin:ewyv2bxr2mjq0olb@elo81obycc.g89pk9c1ui.tsdb.cloud.timescale.com:31738/tsdb?sslmode=require"
+load_dotenv()
+CONNECTION = os.getenv("CONNECTION")
 
 class TigerData:
     def __init__(self, dsn: str = CONNECTION):

@@ -145,6 +145,15 @@ class TigerData:
             row = await conn.fetchrow("SELECT id, auth0_id, email, name, picture, system_role, data, created_at FROM users WHERE id = $1;", user_id)
             return dict(row) if row else None
 
+    async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Look up a user by email, including the password hash for local login verification."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id, auth0_id, email, name, picture, system_role, password_hash, data, created_at FROM users WHERE email = $1;",
+                email,
+            )
+            return dict(row) if row else None
+
     async def update_user_data(self, user_id: int, new_data: Dict[str, Any]):
         async with self.pool.acquire() as conn:
             await conn.execute(

@@ -1,8 +1,22 @@
 """Club accounts and Apify settings; API keys stay in environment variables."""
 
 # Add club usernames here, without the @ symbol, as quoted strings.
-CLUB_HANDLES = ["uf.acm"]
+CLUB_HANDLES = ["ufsase"]
 POSTS_PER_ACCOUNT = 5
+
+OUTPUT_TIMEZONE = "America/New_York"  # UF's timezone; UTC export accounts for DST.
+
+# Known UF building codes used only to prepare Places searches. Add verified
+# code/name pairs here; do not put guessed street addresses or coordinates here.
+# Matching ignores case and requires the entire building code after room removal.
+UF_BUILDING_ALIASES = {
+    "LIT": "Little Hall",
+    "AND": "Anderson Hall",
+    "TUR": "Turlington Hall",
+    "Weimer": "Weimer Hall",
+    "WEIM": "Weimer Hall",
+    "MAT": "Matherly Hall"
+}
 
 # Set APIFY_API_TOKEN in your terminal; no Instagram login session is used.
 APIFY_ACTOR = "apify/instagram-scraper"
@@ -34,6 +48,13 @@ GATORCONNECT_MAX_CANDIDATES = 100  # Public detail pages per organization.
 GATORCONNECT_PAGE_SECONDS = 30
 GATORCONNECT_MEDIA_HOSTS = ("se-images.campuslabs.com",)
 
-# geocode.maps.co has its own key and rate limits, separate from Google Maps.
-# Adjust pacing to your account's quota; one resolver is shared by the run.
+# Legacy maps.co pacing, retained for its standalone module/tests.
+# Active Instagram and GatorConnect lookups use GOOGLE_MAPS_API_KEY (Places New).
 GEOCODE_MIN_INTERVAL_SECONDS = 1.1
+
+# GatorConnect keeps durable source/extraction state separately from the short
+# Instagram cache. Set GATORCONNECT_STATE_DIR to choose its runtime directory.
+GATORCONNECT_USE_GEMINI = True  # False uses source fields only; Tags stays [].
+GATORCONNECT_IMAGE_RECHECK_SECONDS = 3600  # Detect replaced flyers at the same URL.
+GATORCONNECT_RETRY_SECONDS = 4  # Failed enrichment can retry on a later run.
+GATORCONNECT_LOCATION_TTL_SECONDS = 7 * 86400  # Refresh successful geocoding weekly.

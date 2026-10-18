@@ -2,11 +2,11 @@ import { useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
 
 export default function AccountControls() {
-  const { isLoading, isAuthenticated, error, login, logout, user } = useAuth();
+  const { isLoading, isAuthenticated, error, login, logout, user, refetch } = useAuth();
   const [pending, setPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  async function authenticate(action: "login" | "signup" | "logout") {
+  async function authenticate(action: "login" | "logout") {
     setPending(true);
     setActionError(null);
     try {
@@ -32,11 +32,10 @@ export default function AccountControls() {
           </span>
           <button type="button" className="outline-button" disabled={pending} onClick={() => void authenticate("logout")}>Log out</button>
         </> : <>
-          <button type="button" className="text-button" disabled={pending} onClick={() => void authenticate("login")}>Log in</button>
-          <button type="button" className="outline-button" disabled={pending} onClick={() => void authenticate("signup")}>Sign up</button>
+          <button type="button" className="text-button" disabled={pending} onClick={() => void authenticate("login")}>Log in / Sign up</button>
         </>}
       </nav>
-      {(actionError || error) && <p className="account-error" role="alert">{actionError ?? error}</p>}
+      {(actionError || error) && <p className="account-error" role="alert">{actionError ?? error} {error && <button type="button" className="text-button" disabled={pending || isLoading} onClick={() => { setActionError(null); void refetch(); }}>Retry</button>}</p>}
     </div>
   );
 }

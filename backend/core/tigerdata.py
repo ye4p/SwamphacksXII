@@ -262,6 +262,20 @@ class TigerData:
         async with self.pool.acquire() as conn:
             await conn.execute("DELETE FROM events WHERE id = $1;", event_id)
 
+    async def get_event(self, event_id: int) -> Optional[Dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT id, organization_id, timestamp, title, description, address,
+                       ST_X(location::geometry) AS longitude,
+                       ST_Y(location::geometry) AS latitude,
+                       payload
+                FROM events
+                WHERE id = $1;
+            """, event_id)
+            return dict(row) if row else None
+
+
+
     async def get_current_events(self) -> List[Dict[str, Any]]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
@@ -304,7 +318,37 @@ class TigerData:
             """, start_date, end_date)
             return [dict(row) for row in rows]
 
+    async def get_events_from_start_for_days(
+        self, start_date: date, num_days: int
+    ) -> List[Dict[str, Any]]:
+        if num_days < 0:
+            num_days = 0
+        end_date = start_date + timedelta(days=num_days)
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT id, organization_id, timestamp, title, description, address,
+                       ST_X(location::geometry) AS longitude,
+                       ST_Y(location::geometry) AS latitude,
+                       payload
+                FROM events
+                WHERE timestamp::date >= $1 AND timestamp::date <= $2
+                ORDER BY timestamp ASC;
+            """, start_date, end_date)
+            return [dict(row) for row in rows]
+
+
+
     # ==================== ORGANIZATION MEMBERSHIP (FAVORITES) ====================
+    async def get_organization(self, organization_id: int) -> Optional[Dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT id, name, description, metadata, created_at, updated_at FROM organizations WHERE id = $1;", organization_id)
+            return dict(row) if row else None
+    async def get_all_organizations(self) -> List[Dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT id, name, description, metadata, created_at, updated_at FROM organizations ORDER BY id ASC;")
+            return [dict(row) for row in rows]
+
+
     async def get_user_organizations(self, user_id: int) -> List[Dict[str, Any]]:
         """Return all organizations the user is a member of (their 'favorites')."""
         async with self.pool.acquire() as conn:
@@ -318,6 +362,12 @@ class TigerData:
             """, user_id)
             return [dict(row) for row in rows]
 
+
+
+    async def get_all_users(self) -> List[Dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT id, auth0_id, email, name, picture, system_role, data, created_at FROM users ORDER BY id ASC;")
+            return [dict(row) for row in rows]
 
 # ==================== FULL TEST SUITE ====================
 # async def main():

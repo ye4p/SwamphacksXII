@@ -81,7 +81,7 @@ def select_events(records, now, days, limit):
         parse_start(r.get("startsOn")) or latest, str(r["id"])))[:limit]
 
 
-def collect_listing(page, url):
+def collect_listing(page, url, *, warnings=None):
     """Observe only event-search responses for this organization's listing."""
     records = []
     failures = []
@@ -135,6 +135,19 @@ def collect_listing(page, url):
         if failures or (not records and not re.search(r"no (?:upcoming )?events|0 (?:out of|events)|no results", body, re.I)):
             raise ScraperError("collection", "listing_changed",
                                "Could not verify the public event listing; its page format may have changed.")
+        return records
+    except Exception as error:
+        if not records:
+            raise
+        # A later failed page must not erase the public records already read.
+        # Do not claim that this partial list contains the earliest events overall.
+        warning = {**error_record(error, "collection"), "organization_url": url,
+                   "partial_results": True,
+                   "message": "Discovery incomplete; returning events collected before the limit or failure."}
+        if warnings is not None:
+            warnings.append(warning)
+        else:
+            print(warning["message"], file=sys.stderr)
         return records
     finally:
         page.remove_listener("response", capture)
@@ -209,7 +222,7 @@ def collect_gatorconnect(organization_urls=None, *, now=None):
     from playwright.sync_api import sync_playwright
 
     now = now or datetime.now(timezone.utc)
-    result = {"posts": [], "errors": []}
+    result = {"posts": [], "errors": [], "warnings": []}
     seen = set()
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
@@ -225,7 +238,10 @@ def collect_gatorconnect(organization_urls=None, *, now=None):
             for url in urls:
                 print(f"Collecting public GatorConnect events: {url}", file=sys.stderr)
                 try:
-                    records = collect_listing(page, url)
+                    records = collect_listing(page, url, warnings=result["warnings"])
+                    # Shared IDs already collected must not consume this club's
+                    # five slots and hide its next distinct event.
+                    records = [record for record in records if str(record.get("id")) not in seen]
                     selected = select_events(records, now, config.GATORCONNECT_DAYS_AHEAD, limit)
                     for record in selected:
                         identity = str(record["id"])

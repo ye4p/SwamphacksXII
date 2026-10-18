@@ -20,7 +20,7 @@ else:
 
 
 # --- Gemini: read images and return event information ---
-def extract_events(images, caption="", *, source_type="instagram", enrich=True):
+def extract_events(images, caption="", *, source_type="instagram", enrich=True, use_cache=True):
     """Extract one source item; existing Instagram calls still include Maps.
 
     GatorConnect passes text and optional images with enrich=False, then checks
@@ -38,11 +38,13 @@ def extract_events(images, caption="", *, source_type="instagram", enrich=True):
         raise ScraperError("image_validation", "image_size", "Use images totaling at most 10 MB.")
 
     images = [(data, image_mime(data)) for data, _ in images]
-    model = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+    model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
     # Source identity participates in caching, so identical text from different
     # extraction modes cannot accidentally share a differently prompted result.
     key = cache_key(images, caption, model, source_type=source_type)
-    cached = cached_extraction(key)
+    # GatorConnect's durable revision store can manage extraction reuse instead
+    # of relying on this short-lived cache. Instagram retains the default.
+    cached = cached_extraction(key) if use_cache else None
     if cached is not None:
         # Revalidate cached model data and refresh Maps; never cache map results.
         try:
@@ -67,6 +69,10 @@ def extract_events(images, caption="", *, source_type="instagram", enrich=True):
     # This classification lets Python skip locations that cannot be mapped.
     event_properties["location_kind"] = {
         "type": "string", "enum": ["physical", "online", "missing", "ambiguous"]}
+    # Explicit classification gives Python another way to reject activity
+    # catalogs accidentally emitted as individual events by the model.
+    event_properties["announcement_type"] = {
+        "type": "string", "enum": ["specific_event", "general_promotion", "recap"]}
     # Tags is always a list, including [] when no allowed label fits.
     event_properties["Tags"] = {
         "type": "array", "items": {"type": "string", "enum": EVENT_TAGS}}
@@ -79,7 +85,7 @@ def extract_events(images, caption="", *, source_type="instagram", enrich=True):
                 "items": {
                     "type": "object",
                     "properties": event_properties,
-                    "required": fields + ["location_kind", "Tags"],
+                    "required": fields + ["location_kind", "Tags", "announcement_type"],
                 },
             },
         },
@@ -93,6 +99,21 @@ def extract_events(images, caption="", *, source_type="instagram", enrich=True):
     An event is a specific advertised activity such as a meeting, workshop,
     social, tour, or competition. Exclude officer introductions, general club
     promotions, and past-event recaps unless they also announce a specific event.
+    A list of services or recurring offerings is NOT a list of event announcements.
+    For example, 'Host Technical Workshops & Design Team Projects' and 'Organize
+    Professional Events including Resume Reviews, Interview Prep, and Industry
+    Networking' describe a club's mission: return events: [], not five events.
+    Titles alone, a semester heading, 'join our Discord', or 'join today' do not
+    make these specific occurrences. Each retained event must announce a
+    particular activity people can attend, even if its date/location is TBA.
+    Set announcement_type to specific_event for retained announcements. Never
+    include general_promotion or recap records in events; Python also drops them.
+    An incidental invitation such as 'Come say hi at our GBM in the fall' in an
+    officer introduction does not announce a specific event: return events: [].
+    By contrast, 'Join our first GBM for pizza and project demos, date TBA' is a
+    specific announced activity; keep it with unknown details null. A mixed
+    officer carousel with a concrete workshop announcement keeps the workshop.
+    Do not turn a recap's description of what happened into an announcement.
     For mixed posts, extract only the announced events. Keep announcements even
     with incomplete dates or locations; do not filter by today's date.
     Return an empty events list for non-event posts. Use null for missing or
@@ -111,9 +132,20 @@ def extract_events(images, caption="", *, source_type="instagram", enrich=True):
     (for example, "October 15th"). Use null if no readable date is provided.
     Use YYYY-MM-DD for date only if the complete date including year is explicit
     in the images or caption. Otherwise keep date null while preserving date_text.
-    Keep time as written. Put exact source excerpts in supporting_text, including
-    incomplete dates. If sources conflict, leave the affected field null and
-    preserve both conflicting excerpts in supporting_text.
+    When no year is mentioned, Python will supply the current calendar year from
+    a readable month/day and label it inferred. Do not guess the year yourself.
+    The year may appear elsewhere on the SAME flyer when it clearly applies to
+    this event: 'FALL 2026 SOCCER SOCIAL' with 'October 15th' supports 2026-10-15.
+    Never borrow a year from unrelated officer bios, academic years such as
+    '2026-27', another carousel event, the publication date, or the current date.
+    If the year is conflicting or its connection is unclear, keep date null.
+    Keep time as written. supporting_text must be ONE contiguous verbatim
+    excerpt from the caption OR image_text. Copy the most informative excerpt;
+    it need not contain every event detail. Do not join separate snippets,
+    paraphrase, add punctuation, or insert labels/ellipses into that excerpt.
+    Use null if no excerpt is available. If sources conflict, leave the affected
+    field null and explain the contradiction in description; supporting_text
+    still contains only one exact excerpt. Preserve all readable text in image_text.
     """
     # Send the shared vocabulary so Gemini selects labels rather than inventing them.
     instructions += f"\nAllowed event tags: {json.dumps(EVENT_TAGS)}\n"
@@ -178,5 +210,6 @@ def extract_events(images, caption="", *, source_type="instagram", enrich=True):
     except ValueError:
         raise ScraperError("validation", "invalid_json", "Gemini did not return valid JSON.") from None
     validated = validate_extraction(extracted, caption, source_type=source_type)
-    cached_extraction(key, extracted)
+    if use_cache:
+        cached_extraction(key, extracted)
     return enrich_locations(validated) if enrich else validated

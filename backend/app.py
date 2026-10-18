@@ -14,8 +14,9 @@ Required environment variables:
   SECRET_KEY          signing key for app session JWTs
   AUTH0_DOMAIN        e.g. example.us.auth0.com
   AUTH0_CLIENT_ID     Auth0 application client id
-  AUTH0_CLIENT_SECRET Auth0 application client secret
-  AUTH0_AUDIENCE      (optional) audience claim expected in Auth0 id_tokens
+  AUTH0_CLIENT_SECRET Auth0 application client secret (Post/Basic methods)
+  AUTH0_TOKEN_ENDPOINT_AUTH_METHOD client_secret_post (default),
+                      client_secret_basic, or none; must match Auth0 settings
   AUTH0_CALLBACK_URL  redirect URL registered in Auth0, e.g.
                       https://api.example.com/auth/auth0/callback
   FRONTEND_URL        origin users are sent to after login/logout
@@ -25,13 +26,14 @@ Required environment variables:
 
 import base64
 import hashlib
+import logging
 import os
 import secrets
 import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Optional
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlparse
 
 from dotenv import load_dotenv
 from fastapi import (
@@ -57,6 +59,8 @@ import bcrypt
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 from core.tigerdata import TigerData
 
 # -----------------------------------------------------------------------------
@@ -72,7 +76,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1008
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
 AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
 AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
-AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE") or AUTH0_CLIENT_ID
+AUTH0_TOKEN_ENDPOINT_AUTH_METHOD = os.getenv(
+    "AUTH0_TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post"
+).strip().lower()
 AUTH0_CALLBACK_URL = os.getenv(
     "AUTH0_CALLBACK_URL", "http://localhost:8000/auth/auth0/callback"
 )
@@ -86,6 +92,34 @@ _CORS_DEFAULT = f"{FRONTEND_URL},http://localhost:3000,http://localhost:5173"
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", _CORS_DEFAULT).split(",") if o.strip()]
 
 ISSUER = f"https://{AUTH0_DOMAIN}/" if AUTH0_DOMAIN else ""
+
+
+def _validate_auth0_config() -> None:
+    if not AUTH0_DOMAIN or not AUTH0_CLIENT_ID:
+        raise HTTPException(500, "Auth0 domain and client ID must be configured on the backend")
+    if AUTH0_TOKEN_ENDPOINT_AUTH_METHOD not in {"client_secret_post", "client_secret_basic", "none"}:
+        raise HTTPException(500, "Invalid AUTH0_TOKEN_ENDPOINT_AUTH_METHOD configuration")
+    if AUTH0_TOKEN_ENDPOINT_AUTH_METHOD != "none" and not AUTH0_CLIENT_SECRET:
+        raise HTTPException(500, "AUTH0_CLIENT_SECRET is missing from the backend environment")
+
+
+def _auth0_token_request(code: str, code_verifier: str) -> dict:
+    _validate_auth0_config()
+    payload = {
+        "grant_type": "authorization_code",
+        "client_id": AUTH0_CLIENT_ID,
+        "code": code,
+        "redirect_uri": AUTH0_CALLBACK_URL,
+        "code_verifier": code_verifier,
+    }
+    options = {"json": payload}
+    if AUTH0_TOKEN_ENDPOINT_AUTH_METHOD == "client_secret_post":
+        payload["client_secret"] = AUTH0_CLIENT_SECRET
+    elif AUTH0_TOKEN_ENDPOINT_AUTH_METHOD == "client_secret_basic":
+        options["auth"] = httpx.BasicAuth(AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET)
+    # Public PKCE clients explicitly use "none". Never downgrade or retry a
+    # rejected confidential-client exchange without authentication.
+    return options
 
 # -----------------------------------------------------------------------------
 # Security helpers
@@ -150,7 +184,8 @@ async def verify_auth0_id_token(id_token: str) -> Dict[str, Any]:
             id_token,
             pem,
             algorithms=["RS256"],
-            audience=AUTH0_AUDIENCE,
+            # ID tokens identify this application, not a custom API resource.
+            audience=AUTH0_CLIENT_ID,
             issuer=ISSUER,
         )
     except JWTError as exc:
@@ -193,6 +228,37 @@ def _clear_session_cookie(response: Response) -> None:
 def _clear_auth0_cookies(response: Response) -> None:
     response.delete_cookie("auth0_state", path="/")
     response.delete_cookie("auth0_code_verifier", path="/")
+    response.delete_cookie("auth0_redirect_to", path="/")
+
+
+def _auth0_exchange_failure(token_response: httpx.Response) -> JSONResponse:
+    # Never log the request payload, raw response, code, verifier, or secret.
+    # Only expose known OAuth error identifiers and our own diagnostic text.
+    messages = {
+        "invalid_client": "Check the backend Auth0 client ID and secret, and ensure AUTH0_TOKEN_ENDPOINT_AUTH_METHOD matches the Auth0 application setting.",
+        "unauthorized_client": "Check that the Auth0 application allows the Authorization Code grant and that AUTH0_TOKEN_ENDPOINT_AUTH_METHOD matches its setting.",
+        "access_denied": "Check the backend Auth0 client credentials and the application's Token Endpoint Authentication Method (must match AUTH0_TOKEN_ENDPOINT_AUTH_METHOD).",
+        "invalid_grant": "Start a fresh login. If this persists, check the callback URL and PKCE configuration; authorization codes expire and can only be used once.",
+        "invalid_request": "Check the Auth0 callback URL and token exchange configuration.",
+    }
+    try:
+        body = token_response.json()
+        error = body.get("error") if isinstance(body, dict) else None
+    except ValueError:
+        error = None
+    error = error if isinstance(error, str) and error in messages else "unknown_error"
+    logger.warning("Auth0 token exchange rejected: status=%s error=%s", token_response.status_code, error)
+    response = JSONResponse(
+        {
+            "detail": "Auth0 token exchange failed",
+            "auth0_error": error,
+            "auth_method": AUTH0_TOKEN_ENDPOINT_AUTH_METHOD,
+            "hint": messages.get(error, "Check the Auth0 tenant logs for the failed code exchange."),
+        },
+        status_code=status.HTTP_400_BAD_REQUEST,
+    )
+    _clear_auth0_cookies(response)
+    return response
 
 
 # -----------------------------------------------------------------------------
@@ -242,14 +308,17 @@ app.add_middleware(
 # Auth dependencies
 # -----------------------------------------------------------------------------
 async def get_current_user(
+    request: Request,
     authorization: Optional[str] = Header(None),
-    session_token: Optional[str] = Cookie(None),
 ) -> Dict[str, Any]:
     token: Optional[str] = None
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1]
-    elif session_token:
-        token = session_token
+    else:
+        cookie_name = COOKIE_NAME
+        session_token = request.cookies.get(cookie_name) if cookie_name else None
+        if session_token:
+            token = session_token
 
     if not token:
         raise HTTPException(
@@ -367,34 +436,12 @@ async def auth0_login(
     response: Response,
     redirect_to: Optional[str] = Query(None),
 ) -> RedirectResponse:
-    if not AUTH0_DOMAIN or not AUTH0_CLIENT_ID:
-        raise HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR, "Auth0 is not configured"
-        )
+    _validate_auth0_config()
 
     state = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(64)
     digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     code_challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-
-    response.set_cookie(
-        "auth0_state",
-        state,
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="lax",
-        path="/",
-        max_age=600,
-    )
-    response.set_cookie(
-        "auth0_code_verifier",
-        code_verifier,
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="lax",
-        path="/",
-        max_age=600,
-    )
 
     params = {
         "response_type": "code",
@@ -405,11 +452,40 @@ async def auth0_login(
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     }
-    if AUTH0_AUDIENCE:
-        params["audience"] = AUTH0_AUDIENCE
+    # This flow only needs an ID token. Requesting a custom API audience can
+    # reject login when that resource is not registered in Auth0.
 
     authorize_url = f"https://{AUTH0_DOMAIN}/authorize?{urlencode(params)}"
-    return RedirectResponse(authorize_url)
+    redirect = RedirectResponse(authorize_url)
+    redirect.set_cookie(
+        "auth0_state",
+        state,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        path="/",
+        max_age=600,
+    )
+    redirect.set_cookie(
+        "auth0_code_verifier",
+        code_verifier,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        path="/",
+        max_age=600,
+    )
+    if redirect_to:
+        redirect.set_cookie(
+            "auth0_redirect_to",
+            redirect_to,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax",
+            path="/",
+            max_age=600,
+        )
+    return redirect
 
 
 @app.get("/auth/auth0/callback")
@@ -419,38 +495,40 @@ async def auth0_callback(
     code: Optional[str] = Query(None),
     state: Optional[str] = Query(None),
     redirect_to: Optional[str] = Query(None),
-) -> RedirectResponse:
+) -> Response:
     expected_state = request.cookies.get("auth0_state")
     code_verifier = request.cookies.get("auth0_code_verifier")
 
     if not code or not state or not expected_state or state != expected_state:
-        _clear_auth0_cookies(response)
+        redirect = RedirectResponse(FRONTEND_URL)
+        _clear_auth0_cookies(redirect)
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Invalid Auth0 request state"
         )
 
-    token_payload = {
-        "grant_type": "authorization_code",
-        "client_id": AUTH0_CLIENT_ID,
-        "client_secret": AUTH0_CLIENT_SECRET,
-        "code": code,
-        "redirect_uri": AUTH0_CALLBACK_URL,
-        "code_verifier": code_verifier,
-    }
+    if not code_verifier:
+        failure = JSONResponse(
+            {"detail": "Auth0 PKCE cookie is missing or expired. Start a fresh login."},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+        _clear_auth0_cookies(failure)
+        return failure
+
+    token_options = _auth0_token_request(code, code_verifier)
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         token_resp = await client.post(
-            f"https://{AUTH0_DOMAIN}/oauth/token", json=token_payload
+            f"https://{AUTH0_DOMAIN}/oauth/token", **token_options
         )
 
     if token_resp.status_code >= 400:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Auth0 token exchange failed"
-        )
+        return _auth0_exchange_failure(token_resp)
 
     tokens = token_resp.json()
     id_token = tokens.get("id_token")
     if not id_token:
+        redirect = RedirectResponse(FRONTEND_URL)
+        _clear_auth0_cookies(redirect)
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Auth0 did not return an id_token"
         )
@@ -464,13 +542,22 @@ async def auth0_callback(
     user_id = await db.upsert_auth0_user(auth0_id, email, name, picture)
     app_token = create_app_token(user_id, email)
 
-    target = redirect_to or FRONTEND_URL
-    if not target.startswith("/") and target != FRONTEND_URL:
+    cookie_redirect = request.cookies.get("auth0_redirect_to")
+    target = redirect_to or cookie_redirect or FRONTEND_URL
+    if target and not (target.startswith("/") or target.startswith("http://") or target.startswith("https://")):
+        target = FRONTEND_URL
+    if target and (target.startswith("http://") or target.startswith("https://")):
+        parsed = urlparse(target)
+        fparsed = urlparse(FRONTEND_URL)
+        if parsed.scheme != fparsed.scheme or parsed.netloc != fparsed.netloc:
+            target = FRONTEND_URL
+    if not target:
         target = FRONTEND_URL
 
-    _set_session_cookie(response, app_token)
-    _clear_auth0_cookies(response)
-    return RedirectResponse(target)
+    redirect = RedirectResponse(target)
+    _set_session_cookie(redirect, app_token)
+    _clear_auth0_cookies(redirect)
+    return redirect
 
 
 @app.get("/auth/auth0/logout")
@@ -478,15 +565,21 @@ async def auth0_logout(
     response: Response,
     redirect_to: Optional[str] = Query(None),
 ) -> RedirectResponse:
-    _clear_session_cookie(response)
     target = redirect_to or FRONTEND_URL
-    if not target.startswith("/") and target != FRONTEND_URL:
+    if target and (target.startswith("http://") or target.startswith("https://")):
+        parsed = urlparse(target)
+        fparsed = urlparse(FRONTEND_URL)
+        if parsed.scheme != fparsed.scheme or parsed.netloc != fparsed.netloc:
+            target = FRONTEND_URL
+    if not target:
         target = FRONTEND_URL
     logout_url = (
         f"https://{AUTH0_DOMAIN}/v2/logout?"
         f"client_id={AUTH0_CLIENT_ID}&returnTo={quote(target)}"
     )
-    return RedirectResponse(logout_url)
+    redirect = RedirectResponse(logout_url)
+    _clear_session_cookie(redirect)
+    return redirect
 
 
 @app.post("/auth/logout")
@@ -577,8 +670,8 @@ async def get_events_day(date: date) -> Dict[str, Any]:
 
 
 @app.get("/api/getEventsFromDay")
-async def get_events_from_day(startdate: date) -> Dict[str, Any]:
-    events = await db.get_events_from_day(startdate)
+async def get_events_from_day(numdays: int = 7) -> Dict[str, Any]:
+    events = await db.get_events_from_start_for_days(date.today(), numdays)
     return {"events": events}
 
 
@@ -588,3 +681,102 @@ async def fetch_favorites(
 ) -> Dict[str, Any]:
     orgs = await db.get_user_organizations(current_user["id"])
     return {"organizations": orgs}
+
+
+# -----------------------------------------------------------------------------
+# Favorite/Unfavorite Organizations (Memberships)
+# -----------------------------------------------------------------------------
+
+@app.post("/api/favorites/{organization_id}")
+async def favorite_organization(
+    organization_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    user_id = current_user["id"]
+    org = await db.get_organization(organization_id)
+    if not org:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Organization not found")
+    await db.assign_membership(user_id, organization_id, "member")
+    orgs = await db.get_user_organizations(user_id)
+    return {"organizations": orgs}
+
+
+@app.delete("/api/favorites/{organization_id}")
+async def unfavorite_organization(
+    organization_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    user_id = current_user["id"]
+    await db.remove_membership(user_id, organization_id)
+    orgs = await db.get_user_organizations(user_id)
+    return {"organizations": orgs}
+
+
+# -----------------------------------------------------------------------------
+# Dev/Test endpoints (REMOVE IN PRODUCTION)
+# -----------------------------------------------------------------------------
+
+@app.get("/api/dev/users")
+async def dev_list_users() -> Dict[str, Any]:
+    users = await db.get_all_users()
+    return {"users": users}
+
+
+@app.get("/api/dev/organizations")
+async def dev_list_organizations() -> Dict[str, Any]:
+    orgs = await db.get_all_organizations()
+    return {"orgs": orgs}
+
+
+# -----------------------------------------------------------------------------
+# Individual get endpoints (no login required)
+# -----------------------------------------------------------------------------
+
+@app.get("/api/getEvent/{event_id}")
+async def get_event(event_id: int) -> Dict[str, Any]:
+    event = await db.get_event(event_id)
+    if not event:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Event not found")
+    return {"event": event}
+
+
+@app.get("/api/getOrganization/{organization_id}")
+async def get_organization(organization_id: int) -> Dict[str, Any]:
+    org = await db.get_organization(organization_id)
+    if not org:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Organization not found")
+    return {"organization": org}
+
+
+@app.get("/api/getOrganizations")
+async def get_organizations() -> Dict[str, Any]:
+    orgs = await db.get_all_organizations()
+    orgs_light = [
+        {
+            "id": o["id"],
+            "name": o["name"],
+            "description": o["description"],
+        }
+        for o in orgs
+    ]
+    return {"organizations": orgs_light}
+
+
+# -----------------------------------------------------------------------------
+# Recommendations (login required)
+# -----------------------------------------------------------------------------
+
+@app.get("/api/getRecommendations/events")
+async def get_recommendations_events(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    # Placeholder: return empty list until recommendation logic is implemented
+    return {"events": []}
+
+
+@app.get("/api/getRecommendations/organizations")
+async def get_recommendations_organizations(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    # Placeholder: return empty list until recommendation logic is implemented
+    return {"organizations": []}

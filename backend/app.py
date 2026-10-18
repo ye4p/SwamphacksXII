@@ -348,7 +348,7 @@ async def scheduled_scraping_job():
     print(f"Found {len(unique_events)} unique new events!")
 
     for v in unique_events:
-        db.add_event(self, timestamp = v["timestamp"], title = v["title"], description = v["description"], address = v["address"], longitude = v["longitude"], latitude = v["latitude"], organization_id = v["organization_id"], payload = v["payload"])
+        db.add_event(timestamp = v["timestamp"], title = v["title"], description = v["description"], address = v["address"], longitude = v["longitude"], latitude = v["latitude"], organization_id = v["organization_id"], payload = v["payload"])
 
     print("Saved new events!")
 

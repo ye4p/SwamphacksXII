@@ -22,3 +22,18 @@ MAX_CLUBS = 20
 MAX_POSTS_PER_ACCOUNT = 20
 RETRY_ATTEMPTS = 2  # Includes the first attempt, not two extra attempts.
 CACHE_TTL_SECONDS = 86400  # Reuse Gemini text extraction for up to one day.
+
+# GatorConnect is a separate source; use public organization profile URLs.
+# Copy each URL from https://gatorconnect.ufl.edu/organizations.
+# An empty list produces a setup message instead of scraping every club.
+GATORCONNECT_ORGANIZATION_URLS = ["https://gatorconnect.ufl.edu/organization/aerogator", "https://gatorconnect.ufl.edu/organization/asme"]
+GATORCONNECT_DAYS_AHEAD = 30
+GATORCONNECT_EVENTS_PER_ORG = 5  # Applied BEFORE flyer downloads and Gemini.
+GATORCONNECT_MAX_PAGES = 10  # Bounds discovery even if pagination breaks.
+GATORCONNECT_MAX_CANDIDATES = 100  # Public detail pages per organization.
+GATORCONNECT_PAGE_SECONDS = 30
+GATORCONNECT_MEDIA_HOSTS = ("se-images.campuslabs.com",)
+
+# geocode.maps.co has its own key and rate limits, separate from Google Maps.
+# Adjust pacing to your account's quota; one resolver is shared by the run.
+GEOCODE_MIN_INTERVAL_SECONDS = 1.1

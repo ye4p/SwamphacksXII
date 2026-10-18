@@ -1,7 +1,8 @@
-"""Collect Instagram posts with Apify and extract event details with Gemini.
+"""Collect Instagram or public GatorConnect events and extract details with Gemini.
 
 Install: python -m pip install "apify-client>=3,<4" google-genai requests
 Run from the project folder: python Scraper/main.py
+GatorConnect: python Scraper/main.py --source gatorconnect (see Scraper/README.md).
 Test Gemini: python Scraper/main.py --images flyer.jpg --caption "Club meeting"
 Location lookup: set GOOGLE_MAPS_API_KEY with Places API (New) enabled."""
 
@@ -26,7 +27,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--images", nargs="+", help="Saved images from ONE post")
     parser.add_argument("--caption", default="", help="That post's caption")
+    parser.add_argument("--source", choices=("instagram", "gatorconnect"),
+                        default="instagram", help="Public event source (default: instagram)")
     args = parser.parse_args()
+    if args.images and args.source != "instagram":
+        parser.error("--images is the existing Instagram saved-image mode; omit --source.")
     if args.images:
         # This mode tests Gemini without contacting Instagram.
         try:
@@ -36,7 +41,15 @@ def main():
             result = {"events": [], "errors": [error_record(error, "local_image")]}
     else:
         try:
-            result = scrape_events()
+            if args.source == "gatorconnect":
+                # Lazy loading keeps Playwright optional for Instagram users.
+                if __package__:
+                    from .gatorconnect_pipeline import scrape_gatorconnect
+                else:
+                    from gatorconnect_pipeline import scrape_gatorconnect
+                result = scrape_gatorconnect()
+            else:
+                result = scrape_events()
         except Exception as error:
             # Unexpected setup/runtime failures still produce machine-readable JSON.
             result = {"posts": [], "errors": [error_record(error, "pipeline")]}

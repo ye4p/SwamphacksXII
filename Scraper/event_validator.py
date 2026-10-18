@@ -18,12 +18,17 @@ def normalized(text):
     return ' '.join(text.casefold().split())
 
 
-def validate_extraction(extracted, caption):
+def validate_extraction(extracted, caption, *, source_type="instagram"):
     """Retain incomplete events, remove invalid values, and attach review warnings."""
     if (not isinstance(extracted, dict) or not isinstance(extracted.get('image_text'), str)
             or not isinstance(extracted.get('events'), list)
             or len(extracted['events']) > MAX_EVENTS):
         raise ScraperError('validation', 'invalid_structure', 'Gemini returned an invalid extraction structure.')
+    if source_type == 'gatorconnect' and len(extracted['events']) > 1:
+        # Reject before caching: one detail page must not turn recommendations
+        # into extra events, and a failed extraction must be retryable later.
+        raise ScraperError('validation', 'multiple_page_events',
+                           'One GatorConnect detail page produced multiple events; review required.')
     source = normalized(caption + '\n' + extracted['image_text'])
     validated = []
     for raw in extracted['events']:
@@ -96,6 +101,22 @@ def validate_extraction(extracted, caption):
         for field in ('title', 'date', 'time', 'location'):
             if not event[field]:
                 warnings.append(f'{field}: missing or uncertain.')
+        if source_type == 'gatorconnect':
+            # Expanded names are search candidates, not source-verified facts.
+            # In contrast, a proposed address must occur in the source text.
+            for field in ('venue', 'full_address'):
+                value = raw.get(field)
+                if value is not None and not isinstance(value, str):
+                    warnings.append(f'{field}: expected text or null; value removed.')
+                    value = None
+                event[field] = value.strip() or None if isinstance(value, str) else None
+            if event['full_address'] and normalized(event['full_address']) not in source:
+                event['full_address'] = None
+                warnings.append('full_address: not found in source; value removed.')
+            if event['location_kind'] != 'physical' or not event['location']:
+                event['venue'] = None
+            elif event['venue'] and normalized(event['venue']) not in source:
+                warnings.append('venue: model-expanded lookup candidate; requires location verification.')
         event['validation_status'] = 'needs_review' if warnings else 'checked'
         event['validation_warnings'] = warnings
         validated.append(event)

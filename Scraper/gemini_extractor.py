@@ -20,29 +20,38 @@ else:
 
 
 # --- Gemini: read images and return event information ---
-def extract_events(images, caption=""):
-    """Accept (image bytes, MIME type) pairs from one post; return a dictionary."""
+def extract_events(images, caption="", *, source_type="instagram", enrich=True):
+    """Extract one source item; existing Instagram calls still include Maps.
+
+    GatorConnect passes text and optional images with enrich=False, then checks
+    source details before selecting its own geocoding provider.
+    """
+    if source_type not in ("instagram", "gatorconnect"):
+        raise ValueError("Unsupported extraction source.")
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ScraperError("settings", "missing_gemini_key", "Set GEMINI_API_KEY in your terminal first.")
-    if not images or len(images) > MAX_IMAGES:
+    if (len(images) > MAX_IMAGES or (not images and
+            (source_type != "gatorconnect" or not caption.strip()))):
         raise ScraperError("image_validation", "image_count", f"Provide 1?{MAX_IMAGES} images.")
     if sum(len(data) for data, _ in images) > MAX_IMAGE_BYTES:
         raise ScraperError("image_validation", "image_size", "Use images totaling at most 10 MB.")
 
     images = [(data, image_mime(data)) for data, _ in images]
     model = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
-    key = cache_key(images, caption, model)
+    # Source identity participates in caching, so identical text from different
+    # extraction modes cannot accidentally share a differently prompted result.
+    key = cache_key(images, caption, model, source_type=source_type)
     cached = cached_extraction(key)
     if cached is not None:
         # Revalidate cached model data and refresh Maps; never cache map results.
         try:
-            validated = validate_extraction(cached, caption)
+            validated = validate_extraction(cached, caption, source_type=source_type)
         except ScraperError:
             # A malformed local cache entry should be replaced, not poison runs.
             pass
         else:
-            return enrich_locations(validated)
+            return enrich_locations(validated) if enrich else validated
 
     # Load the Gemini library only when this function is used.
     from google import genai
@@ -119,6 +128,26 @@ def extract_events(images, caption=""):
     Multiple tags may apply. Do not tag a general social as networking unless
     professional connection-building is indicated.
     """
+    if source_type == "gatorconnect":
+        # Extra fields apply only to the new source, preserving Instagram's JSON.
+        for field in ("venue", "full_address"):
+            event_properties[field] = {"type": ["string", "null"]}
+            schema["properties"]["events"]["items"]["required"].append(field)
+        instructions += """
+        This source is ONE public GatorConnect event detail page, not Instagram.
+        The source text contains page details and any explicit structured fields.
+        Extract only this page's event, not recommendations or navigation links.
+        Images are optional: extract from source text even without a flyer.
+        With no images return image_text as an empty string. Do not rewrite page
+        text into image_text. Return at most one event for this detail page.
+        Structured dates and locations take precedence over conflicting flyers.
+        Return venue separately from location, without its room number. You may
+        expand a UF abbreviation to a likely building name for a lookup candidate;
+        use null when uncertain. This expansion is NOT a verified location.
+        full_address must be a complete physical street address explicitly in
+        the page or flyer. Never invent a street, postal code, or coordinates.
+        Preserve exact location and address_text excerpts for Python validation.
+        """
     # A MIME type identifies the image format, for example image/jpeg.
     contents = [types.Part.from_bytes(data=data, mime_type=mime)
                 for data, mime in images]
@@ -148,6 +177,6 @@ def extract_events(images, caption=""):
         extracted = json.loads(response.text)
     except ValueError:
         raise ScraperError("validation", "invalid_json", "Gemini did not return valid JSON.") from None
-    validated = validate_extraction(extracted, caption)
+    validated = validate_extraction(extracted, caption, source_type=source_type)
     cached_extraction(key, extracted)
-    return enrich_locations(validated)
+    return enrich_locations(validated) if enrich else validated

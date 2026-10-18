@@ -540,11 +540,11 @@ async def dangerous():
 
     # Sample events around 2026-10-17 (today)
     sample_events = [
-        ("2026-10-17 10:00:00+00", "Opening Ceremony", "Opening ceremony description wow nice", "test lane 1", -82.3536, 29.6516, {"notes": "Main auditorium"}),
-        ("2026-10-17 14:00:00+00", "Kickoff Hackathon", "kickoff hackaton description wow nice", "test lane 2", -82.3540, 29.6520, {"notes": "Bring laptops"}),
-        ("2026-10-18 09:00:00+00", "Workshop: Intro to FastAPI", "workshop description wow nice", "test lane 3", -82.3530, 29.6510, {"notes": "Room 101"}),
-        ("2026-10-19 16:00:00+00", "Mentor Office Hours", "mentor office hours description wow nice", "test lane 4", -82.3536, 29.6516, {"notes": "Drop-in"}),
-        ("2026-10-20 12:00:00+00", "Midpoint Check-in", "midpoint checkin description wow nice", "test lane 5", -82.3540, 29.6520, {"notes": "Pizza provided"}),
+        ("2026-10-17 10:00:00+00", "Opening Ceremony", "Opening ceremony description wow nice", "test lane 1", -82.3536, 29.6516, {"notes": "Main auditorium", "tags": ["event"]}),
+        ("2026-10-17 14:00:00+00", "Kickoff Hackathon", "kickoff hackaton description wow nice", "test lane 2", -82.3540, 29.6520, {"notes": "Bring laptops", "tags": ["event"]}),
+        ("2026-10-18 09:00:00+00", "Workshop: Intro to FastAPI", "workshop description wow nice", "test lane 3", -82.3530, 29.6510, {"notes": "Room 101", "tags": ["event"]}),
+        ("2026-10-19 16:00:00+00", "Mentor Office Hours", "mentor office hours description wow nice", "test lane 4", -82.3536, 29.6516, {"notes": "Drop-in", "tags": ["event"]}),
+        ("2026-10-20 12:00:00+00", "Midpoint Check-in", "midpoint checkin description wow nice", "test lane 5", -82.3540, 29.6520, {"notes": "Pizza provided", "tags": ["event"]}),
     ]
     for ts, title, description, address, lon, lat, payload in sample_events:
         await db.add_event(

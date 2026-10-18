@@ -9,16 +9,17 @@ interface EventPopupProps {
 
 export default function EventPopup({ event }: EventPopupProps) {
 
-  const is_food: Boolean = event.tags?.includes("food") ?? false
+  const is_food: Boolean = event.payload?.tags?.includes("food") ?? false
 
   return (
     <div className="event-popup">
       <h3>{event.title}</h3>
-      <div className="meta">{formatEventDate(event.start_time)}</div>
+      {event.address && <div className="meta">{event.address}</div>}
+      <div className="meta">{formatEventDate(event.timestamp)}</div>
       <div className="meta">{event.description}</div>
       {is_food && <div className={`meta food`}>{"Food provided"}</div>}
       <div className="tags">
-        {event.tags.map((t) => (
+        {(event.payload?.tags ?? []).map((t) => (
           <span key={t} className="tag">{t}</span>
         ))}
       </div>

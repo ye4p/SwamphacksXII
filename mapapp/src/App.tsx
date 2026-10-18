@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import "./index.css";
-import hardcodedEvents from "./data/events";
 import type { Event } from "./types";
 import { useEvents } from "./hooks/useEvents";
 import { useEventFilters } from "./hooks/useEventFilters";
@@ -10,9 +9,8 @@ import EventSidebar from "./components/events/EventSidebar";
 export default function App() {
   const [userPosition, setUserPosition] = useState<[number, number] | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const { events, setEvents } = useEvents();
+  const { events, setEvents, loading, error } = useEvents();
   const { filters, setFilters, filteredEvents, invalidRange, resetFilters } = useEventFilters(events);
-  useEffect(() => { setEvents(hardcodedEvents); }, [setEvents]);
   useEffect(() => { navigator.geolocation?.getCurrentPosition(({ coords }) => setUserPosition([coords.latitude, coords.longitude]), () => {}); }, []);
   return <div className="app-shell">
     <Header query={filters.query} onSearch={(query) => setFilters({ ...filters, query })} />

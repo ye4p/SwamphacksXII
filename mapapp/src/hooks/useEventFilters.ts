@@ -16,13 +16,13 @@ export function useEventFilters(events: Event[]) {
   const filteredEvents = useMemo(() => {
     const query = filters.query.trim().toLowerCase();
     return events.filter((event) => {
-      const start = new Date(event.start_time).getTime();
+      const start = new Date(event.timestamp).getTime();
       return !invalidRange &&
         (!query || `${event.title} ${event.description}`.toLowerCase().includes(query)) &&
         (!filters.from || start >= new Date(filters.from).getTime()) &&
         (!filters.to || start <= new Date(filters.to).getTime()) &&
-        (!filters.tags.length || filters.tags.some((tag) => event.tags.includes(tag)));
-    }).sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time));
+        (!filters.tags.length || filters.tags.some((tag) => event.payload?.tags?.includes(tag)));
+    }).sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
   }, [events, filters, invalidRange]);
   return { filters, setFilters, filteredEvents, invalidRange, resetFilters: () => setFilters(emptyFilters) };
 }

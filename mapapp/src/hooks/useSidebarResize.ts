@@ -9,7 +9,7 @@ function widthLimits() {
 
 export function useSidebarResize() {
   const [limits, setLimits] = useState(widthLimits);
-  const [preferredWidth, setPreferredWidth] = useState(420);
+  const [preferredWidth, setPreferredWidth] = useState(470);
   const [resizing, setResizing] = useState(false);
   const drag = useRef<{ x: number; width: number } | null>(null);
   const width = Math.min(limits.max, Math.max(limits.min, preferredWidth));

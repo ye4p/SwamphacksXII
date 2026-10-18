@@ -738,7 +738,7 @@ async def dangerous(current_user: Dict[str, Any] = Depends(get_current_user)):
         "UF OSC",
         """The Open Source Club (OSC) at UF is a community dedicated to building and supporting open-source software. Members collaborate through twice-weekly casual coding sessions, tech guest talks, resume reviews, and hackathons""",
         {"type": "student_org"},
-        handle = "uf.acm",
+        handle = "uf_osc",
         conURL = "https://gatorconnect.ufl.edu/organization/osc"
     )
     await db.assign_membership(president_id, org_id, "president")

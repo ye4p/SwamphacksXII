@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import asyncpg
 import os
 from typing import Optional, Dict, Any, Union, List
@@ -93,11 +93,15 @@ class TigerData:
                     organization_id INT REFERENCES organizations(id) ON DELETE SET NULL,
                     timestamp TIMESTAMPTZ NOT NULL,
                     title TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    address TEXT,
                     location GEOMETRY(Point, 4326),
                     payload JSONB DEFAULT '{}'::jsonb,
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 );
             """)
+            await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS address TEXT;")
+            await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS description TEXT NOT NULL;")
 
             # Performance Indexes
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_users_auth0 ON users(auth0_id);")
@@ -112,7 +116,17 @@ class TigerData:
             await conn.execute("TRUNCATE TABLE users, organizations, club_memberships, events RESTART IDENTITY CASCADE;")
 
     # ==================== USERS & AUTH0 ====================
-    async def create_local_user(self, email: str, password_hash: str, system_role: str = "user", initial_data: Optional[Dict[str, Any]] = None) -> int:
+    async def create_local_user(
+        self, 
+        email: str, 
+        password_hash: str, 
+        system_role: str = "user", 
+        initial_data: Optional[Dict[str, Any]] = None
+    ) -> int:
+        
+        # If asyncpg doesn't have a JSON codec registered, use json.dumps():
+        data_json = json.dumps(initial_data or {})
+
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -120,7 +134,7 @@ class TigerData:
                 VALUES ($1, $2, $3, $4::jsonb) 
                 RETURNING id;
                 """,
-                email, password_hash, system_role, initial_data or {}
+                email, password_hash, system_role, data_json
             )
             return row["id"]
 
@@ -229,18 +243,18 @@ class TigerData:
                 )
 
     # ==================== EVENTS ====================
-    async def add_event(self, timestamp: Union[str, datetime], title: str, longitude: float, latitude: float, organization_id: Optional[int] = None, payload: Optional[Dict[str, Any]] = None) -> int:
+    async def add_event(self, timestamp: Union[str, datetime], title: str, description: str, address: str, longitude: float, latitude: float, organization_id: Optional[int] = None, payload: Optional[Dict[str, Any]] = None) -> int:
         if isinstance(timestamp, str):
             timestamp = datetime.fromisoformat(timestamp)
 
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO events (organization_id, timestamp, title, location, payload) 
-                VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6::jsonb) 
+                INSERT INTO events (organization_id, timestamp, title, description, address, location, payload) 
+                VALUES ($1, $2, $3, $4, $5, ST_SetSRID(ST_MakePoint($6, $7), 4326), $8::jsonb) 
                 RETURNING id;
                 """,
-                organization_id, timestamp, title, longitude, latitude, payload or {}
+                organization_id, timestamp, title, description, address, longitude, latitude, payload or {}
             )
             return row["id"]
 
@@ -251,13 +265,57 @@ class TigerData:
     async def get_current_events(self) -> List[Dict[str, Any]]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT id, organization_id, timestamp, title, 
-                       ST_X(location::geometry) AS longitude, 
-                       ST_Y(location::geometry) AS latitude, 
-                       payload 
-                FROM events 
+                SELECT id, organization_id, timestamp, title, description, address,
+                       ST_X(location::geometry) AS longitude,
+                       ST_Y(location::geometry) AS latitude,
+                       payload
+                FROM events
                 ORDER BY timestamp ASC;
             """)
+            return [dict(row) for row in rows]
+
+    # ==================== DATE-BASED EVENT QUERIES ====================
+    async def get_events_on_day(self, target_date: date) -> List[Dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT id, organization_id, timestamp, title, description, address,
+                       ST_X(location::geometry) AS longitude,
+                       ST_Y(location::geometry) AS latitude,
+                       payload
+                FROM events
+                WHERE timestamp::date = $1
+                ORDER BY timestamp ASC;
+            """, target_date)
+            return [dict(row) for row in rows]
+
+    async def get_events_from_day(
+        self, start_date: date, cap_months: int = 7
+    ) -> List[Dict[str, Any]]:
+        end_date = start_date + timedelta(days=cap_months * 30)
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT id, organization_id, timestamp, title, description, address,
+                       ST_X(location::geometry) AS longitude,
+                       ST_Y(location::geometry) AS latitude,
+                       payload
+                FROM events
+                WHERE timestamp >= $1 AND timestamp <= $2
+                ORDER BY timestamp ASC;
+            """, start_date, end_date)
+            return [dict(row) for row in rows]
+
+    # ==================== ORGANIZATION MEMBERSHIP (FAVORITES) ====================
+    async def get_user_organizations(self, user_id: int) -> List[Dict[str, Any]]:
+        """Return all organizations the user is a member of (their 'favorites')."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT o.id, o.name, o.description, o.metadata, o.updated_at,
+                       cm.role, cm.joined_at
+                FROM organizations o
+                JOIN club_memberships cm ON cm.organization_id = o.id
+                WHERE cm.user_id = $1
+                ORDER BY o.name ASC;
+            """, user_id)
             return [dict(row) for row in rows]
 
 

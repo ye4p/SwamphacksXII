@@ -16,13 +16,13 @@ else:
     from config import CACHE_TTL_SECONDS, EVENT_TAGS
 
 
-def cache_key(images, caption, model):
+def cache_key(images, caption, model, *, source_type="instagram"):
     """Image bytes detect changed flyers even when the post URL is unchanged."""
     digest = hashlib.sha256()
     # Changing prompts or validation code invalidates old extraction results.
     for name in ('gemini_extractor.py', 'event_validator.py'):
         digest.update(Path(__file__).with_name(name).read_bytes())
-    digest.update(json.dumps([caption, model, EVENT_TAGS]).encode())
+    digest.update(json.dumps([source_type, caption, model, EVENT_TAGS]).encode())
     for data, mime in images:
         digest.update(mime.encode())
         digest.update(hashlib.sha256(data).digest())

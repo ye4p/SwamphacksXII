@@ -61,9 +61,9 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-from core.tigerdata import TigerData
+from backend.core.tigerdata import TigerData
 
-from "../Scraper/main.py" import run_scraper
+from Scraper.main import run_scraper
 
 # -----------------------------------------------------------------------------
 # Configuration

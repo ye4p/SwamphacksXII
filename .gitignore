@@ -1,12 +1,9 @@
 .venv
 backend/.env
 .env.*
+.env
 __pycache__/
 *.pyc
 .vscode/
 .idea/
-<<<<<<< HEAD
-!frontend/.env.example
-=======
 frontend/node_modules/**
->>>>>>> 50ffd795d3fa7b8deef279666264e6cac1d78547

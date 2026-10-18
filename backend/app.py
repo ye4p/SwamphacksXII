@@ -327,8 +327,8 @@ async def scheduled_scraping_job():
             for v in res:
                 if isinstance(v.get("timestamp"), str):
                     v["timestamp"] = datetime.fromisoformat(v["timestamp"].replace('Z', '+00:00'))
+                all_events.append(v)
             results[platform] = res
-            all_events.append(res)
             print(f"Successfully scraped {platform}")
 
     seen = set()

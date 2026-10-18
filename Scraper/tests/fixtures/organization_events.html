@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fixture organization events</title></head>
+<body>
+  <h1>Fixture Club Events</h1>
+  <div id="events"></div>
+  <button id="more">LOAD MORE</button>
+  <script>
+    // Synthetic public listing: tests intercept this URL, so no server is used.
+    let page = 0;
+    async function load() {
+      const response = await fetch('/api/discovery/event/search?organizationIds%5B0%5D=1&skip=' + page);
+      const data = await response.json();
+      for (const event of data.value) {
+        const link = document.createElement('a');
+        link.href = '/event/' + event.id;
+        link.textContent = event.name;
+        document.querySelector('#events').append(link);
+      }
+      if (++page === 2) document.querySelector('#more').remove();
+    }
+    document.querySelector('#more').addEventListener('click', load);
+    load();
+  </script>
+</body>
+</html>

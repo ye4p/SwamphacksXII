@@ -47,12 +47,15 @@ def read_local_images(filenames):
     return images
 
 
-def media_target(url):
+def media_target(url, *, allowed_hosts=None):
     """Allow only HTTPS Instagram CDNs resolving exclusively to public IPs."""
     try:
         parsed = urlsplit(url)
         host = (parsed.hostname or '').lower()
-        allowed = any(host.endswith('.' + domain) for domain in ('cdninstagram.com', 'fbcdn.net'))
+        # Explicit hosts are used only by GatorConnect; Instagram retains its
+        # original CDN policy. Neither mode accepts arbitrary model-supplied URLs.
+        allowed = (host in allowed_hosts if allowed_hosts is not None else
+                   any(host.endswith('.' + domain) for domain in ('cdninstagram.com', 'fbcdn.net')))
         if (parsed.scheme != 'https' or not allowed or parsed.port not in (None, 443)
                 or parsed.username or parsed.password or parsed.fragment):
             raise ValueError('Disallowed URL')
@@ -67,13 +70,13 @@ def media_target(url):
         raise ScraperError('download', 'dns_error', 'Image host could not be resolved.', True) from None
 
 
-def download_image(url, remaining):
+def download_image(url, remaining, *, allowed_hosts=None):
     """Pin the validated IP, retain TLS hostname checks, and never follow redirects."""
     import certifi
     import urllib3
 
     def download_once():
-        host, ip, target = media_target(url)
+        host, ip, target = media_target(url, allowed_hosts=allowed_hosts)
         deadline = time.monotonic() + REQUEST_SECONDS
         # Connecting directly to the checked IP prevents a second DNS lookup from
         # redirecting us to an internal host. SNI/certificate checks still use host.

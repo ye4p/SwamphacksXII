@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import AccountControls from "../auth/AccountControls";
 
 interface HeaderProps {
-  query: string;
+  onProfileClick: () => void;
   onSearch: (query: string) => void;
 }
-export default function Header({ query, onSearch }: HeaderProps) {
-  const [draft, setDraft] = useState(query);
-  useEffect(() => setDraft(query), [query]);
+export default function Header({ onSearch, onProfileClick }: HeaderProps) {
+  const [draft, setDraft] = useState("");
   return (
     <header className="app-header">
       <a className="brand" href="/" aria-label="swampsearch home">
@@ -19,7 +18,7 @@ export default function Header({ query, onSearch }: HeaderProps) {
         <input id="global-search" type="search" placeholder="Find your next event…" value={draft} onChange={(event) => setDraft(event.target.value)} />
         <button className="primary-button" type="submit">Search</button>
       </form>
-      <AccountControls />
+      <AccountControls onProfileClick={onProfileClick} />
     </header>
   );
 }

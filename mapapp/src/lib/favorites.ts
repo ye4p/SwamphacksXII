@@ -19,3 +19,11 @@ export async function getFavorites(signal?: AbortSignal): Promise<FavoriteOrgani
   }
   return data.organizations;
 }
+
+export async function setFavorite(id: number, favorite: boolean): Promise<FavoriteOrganization[]> {
+  const { data } = await api.request<{ organizations: FavoriteOrganization[] }>({
+    url: `/api/favorites/${id}`, method: favorite ? "POST" : "DELETE",
+  });
+  if (!Array.isArray(data?.organizations)) throw new Error("Invalid favorites response.");
+  return data.organizations;
+}

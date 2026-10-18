@@ -699,15 +699,13 @@ async def admin_members(
     return {"message": "admin area", "user": user_public(current_user)}
 
 @app.get("/api/dangerous")
-async def dangerous(
-    current_user: Dict[str, Any] = Depends(get_current_user),
-):
+async def dangerous(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """TEMPORARY DEV-ONLY: wipe the database and seed a default admin user,
+    one sample organization, and a few sample events around 2026-10-17."""
     if current_user.get("system_role", "user") != "admin":
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "Unauthorized"
-        ):
-    """TEMPORARY DEV-ONLY: wipe the database and seed a default admin user,
-    one sample organization, and a few sample events around 2026-10-17."""
+        )
     await db.wipe_database()
 
     # Default admin user (email/password login)

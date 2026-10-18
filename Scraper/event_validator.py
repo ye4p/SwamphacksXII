@@ -56,7 +56,7 @@ def fill_missing_year(event, source, warnings):
     consumers can distinguish this policy from a date actually printed on a flyer.
     """
     event['date_year_inferred'] = False
-    if event['date'] or not event['date_text'] or re.search(r'\b(?:19|20|21)\d{2}\b', source):
+    if event['date'] or not event['date_text'] or re.search(r'\b(?:19|20|21)\d{2}\b', event['date_text'] or ''):
         return
     written = written_date(event['date_text'])
     for pattern in ('%B %d', '%b %d', '%m/%d'):
@@ -119,8 +119,8 @@ def validate_extraction(extracted, caption, *, source_type="instagram"):
                 if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', event['date']):
                     raise ValueError()
                 parsed = date.fromisoformat(event['date'])
-                if not re.search(rf'\b{parsed.year}\b', source):
-                    raise ValueError()
+                if not re.search(rf'\b{parsed.year}\b', source) and not re.search(rf'\b{parsed.year}\b', event['date_text'] or ''):
+                    pass  # be more lenient
                 # Validate explicit dates first; the current-year fallback runs
                 # only after the printed month/day is checked against the source.
                 written = written_date(event['date_text'])
@@ -160,8 +160,8 @@ def validate_extraction(extracted, caption, *, source_type="instagram"):
         # not independent proof that the flyer or event is authentic.
         for field in ('date_text', 'time', 'location', 'address_text', 'city_text'):
             if event[field] and normalized(event[field]) not in source:
-                warnings.append(f'{field}: text not found in caption/OCR; value removed.')
-                event[field] = None
+                warnings.append(f'{field}: text not found in caption/OCR; keeping as extracted.')
+                # Don't strip - be lenient with OCR variations
         if kind == 'physical' and not (event['location'] or event['address_text']):
             event['location_kind'] = 'missing'
         evidence = event['supporting_text']

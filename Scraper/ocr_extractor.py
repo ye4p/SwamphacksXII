@@ -12,7 +12,7 @@ else:
     from runtime_utils import ScraperError, error_record, http_failure
 
 
-OCR_MAX_BYTES = 1_000_000
+OCR_MAX_BYTES = 1_500_000
 
 
 def prepare_ocr_image(data, mime):
@@ -32,7 +32,7 @@ def prepare_ocr_image(data, mime):
                 picture.paste(rgba, mask=rgba.getchannel("A"))
         while True:
             # Preserve resolution first; only resize if quality changes cannot fit.
-            for quality in (95, 85, 75, 65):
+            for quality in (95, 90, 85, 80, 75):
                 output = BytesIO()
                 picture.save(output, format="JPEG", quality=quality, optimize=True)
                 compressed = output.getvalue()

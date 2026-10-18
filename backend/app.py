@@ -996,3 +996,41 @@ async def get_recommendations_organizations(
     results = await scheduled_scraping_job()
     return {"status": "success", "results": results}
 
+@app.get("/api/add")
+async def addInsta():
+    org_id = await db.upsert_organization(
+        "UF Stats Club",
+        "Pre-professional statistics club.",
+        {"type": "student_org"},
+        handle = "ufstatsclub",
+        # conURL = "https://gatorconnect.ufl.edu/organization/ssd"
+    )
+    await db.assign_membership(2, org_id, "president")
+
+    org_id = await db.upsert_organization(
+        "UF Gator AI",
+        "AI education and applied learning.",
+        {"type": "student_org"},
+        handle = "uf_gatorai",
+        # conURL = "https://gatorconnect.ufl.edu/organization/ssd"
+    )
+    await db.assign_membership(2, org_id, "president")
+
+    org_id = await db.upsert_organization(
+        "The Florida Engineering Society",
+        "Engineering professional development society.",
+        {"type": "student_org"},
+        handle = "gatorfes",
+        # conURL = "https://gatorconnect.ufl.edu/organization/ssd"
+    )
+    await db.assign_membership(2, org_id, "president")
+
+    org_id = await db.upsert_organization(
+        "UF Solar Gators",
+        "Solar-focused engineering design team.",
+        {"type": "student_org"},
+        handle = "ufsolargators",
+        # conURL = "https://gatorconnect.ufl.edu/organization/ssd"
+    )
+    await db.assign_membership(2, org_id, "president")
+    

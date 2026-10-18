@@ -18,13 +18,41 @@ OUTPUT_TIMEZONE = "America/New_York"  # UF's timezone; UTC export accounts for D
 # code/name pairs here; do not put guessed street addresses or coordinates here.
 # Matching ignores case and requires the entire building code after room removal.
 UF_BUILDING_ALIASES = {
+    # General classroom buildings.
     "LIT": "Little Hall",
-    "AND": "Anderson Hall",
-    "TUR": "Turlington Hall",
-    "Weimer": "Weimer Hall",
-    "WEIM": "Weimer Hall",
     "MAT": "Matherly Hall",
-    "Turlington Hall": "Turlington Hall"
+    "TUR": "Turlington Hall",
+    "AND": "Anderson Hall",
+    "WEIM": "Weimer Hall",
+
+    # Engineering buildings.
+    "CSE": "Computer Sciences/Engineering",
+    "NEB": "Engineering Building",
+    "WEIL": "Weil Hall",
+    "BEN": "Benton Hall",
+    "LAR": "Larsen Hall",
+    "BLK": "Black Hall",
+    "RHN": "Rhines Hall",
+    "CHE": "Chemical Engineering",
+    "MAEA": "Mechanical & Aerospace Engineering Building A",
+    "MAEB": "Mechanical & Aerospace Engineering Building B",
+    "MAEC": "Mechanical & Aerospace Engineering Building C",
+    "NANO": "Nanoscale Research Facility",
+    "WERT": "Herbert Wertheim Laboratory of Engineering Excellence",
+
+    # Both codes refer to the same building.
+    "MALA": "Malachowsky Hall for Data Science & Information Technology",
+    "MALAC": "Malachowsky Hall for Data Science & Information Technology",
+
+    # Research and health sciences buildings.
+    "NPB": "New Physics Building",
+    "HPNP": "Health Professions, Nursing and Pharmacy Building",
+    "MBI": "McKnight Brain Institute",
+    "CGRC": "Cancer and Genetics Research Building",
+
+    # Your existing name aliases.
+    "Weimer": "Weimer Hall",
+    "Turlington Hall": "Turlington Hall",
 }
 
 # Set APIFY_API_TOKEN in your terminal; no Instagram login session is used.

@@ -670,8 +670,8 @@ async def get_events_day(date: date) -> Dict[str, Any]:
 
 
 @app.get("/api/getEventsFromDay")
-async def get_events_from_day(startdate: date) -> Dict[str, Any]:
-    events = await db.get_events_from_day(startdate)
+async def get_events_from_day(numdays: int = 7) -> Dict[str, Any]:
+    events = await db.get_events_from_start_for_days(date.today(), numdays)
     return {"events": events}
 
 
@@ -681,3 +681,102 @@ async def fetch_favorites(
 ) -> Dict[str, Any]:
     orgs = await db.get_user_organizations(current_user["id"])
     return {"organizations": orgs}
+
+
+# -----------------------------------------------------------------------------
+# Favorite/Unfavorite Organizations (Memberships)
+# -----------------------------------------------------------------------------
+
+@app.post("/api/favorites/{organization_id}")
+async def favorite_organization(
+    organization_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    user_id = current_user["id"]
+    org = await db.get_organization(organization_id)
+    if not org:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Organization not found")
+    await db.assign_membership(user_id, organization_id, "member")
+    orgs = await db.get_user_organizations(user_id)
+    return {"organizations": orgs}
+
+
+@app.delete("/api/favorites/{organization_id}")
+async def unfavorite_organization(
+    organization_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    user_id = current_user["id"]
+    await db.remove_membership(user_id, organization_id)
+    orgs = await db.get_user_organizations(user_id)
+    return {"organizations": orgs}
+
+
+# -----------------------------------------------------------------------------
+# Dev/Test endpoints (REMOVE IN PRODUCTION)
+# -----------------------------------------------------------------------------
+
+@app.get("/api/dev/users")
+async def dev_list_users() -> Dict[str, Any]:
+    users = await db.get_all_users()
+    return {"users": users}
+
+
+@app.get("/api/dev/organizations")
+async def dev_list_organizations() -> Dict[str, Any]:
+    orgs = await db.get_all_organizations()
+    return {"orgs": orgs}
+
+
+# -----------------------------------------------------------------------------
+# Individual get endpoints (no login required)
+# -----------------------------------------------------------------------------
+
+@app.get("/api/getEvent/{event_id}")
+async def get_event(event_id: int) -> Dict[str, Any]:
+    event = await db.get_event(event_id)
+    if not event:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Event not found")
+    return {"event": event}
+
+
+@app.get("/api/getOrganization/{organization_id}")
+async def get_organization(organization_id: int) -> Dict[str, Any]:
+    org = await db.get_organization(organization_id)
+    if not org:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Organization not found")
+    return {"organization": org}
+
+
+@app.get("/api/getOrganizations")
+async def get_organizations() -> Dict[str, Any]:
+    orgs = await db.get_all_organizations()
+    orgs_light = [
+        {
+            "id": o["id"],
+            "name": o["name"],
+            "description": o["description"],
+        }
+        for o in orgs
+    ]
+    return {"organizations": orgs_light}
+
+
+# -----------------------------------------------------------------------------
+# Recommendations (login required)
+# -----------------------------------------------------------------------------
+
+@app.get("/api/getRecommendations/events")
+async def get_recommendations_events(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    # Placeholder: return empty list until recommendation logic is implemented
+    return {"events": []}
+
+
+@app.get("/api/getRecommendations/organizations")
+async def get_recommendations_organizations(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    # Placeholder: return empty list until recommendation logic is implemented
+    return {"organizations": []}

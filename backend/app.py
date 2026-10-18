@@ -800,4 +800,4 @@ async def get_recommendations_organizations() -> Dict[str, Any]:
     events = await db.get_current_events()
     print("finished getting all orgs, and events")
     results = run_scraper("instagram", orgs, events, GetNewEventID)
-    return {"results": []}
+    return {"results": results}

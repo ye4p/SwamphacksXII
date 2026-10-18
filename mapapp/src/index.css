@@ -81,9 +81,11 @@ input:focus { border-color: var(--focus); }
 .filter-search-row { display: flex; align-items: center; gap: 6px; }
 .filter-search-row input { padding: 8px 10px; font-size: 15px; height: 40px; }
 .filter-search-row .tags-toggle { flex-shrink: 0; height: 40px; padding: 8px 11px; font-size: 15px; }
-.date-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+.date-filters { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 6px; }
 .date-filters label { min-width: 0; color: var(--muted); font-size: 14px; }
-.date-filters input { display: block; padding: 6px; font-size: 13px; margin-top: 4px; height: 38px; }
+.date-filters select { display: block; width: 100%; padding: 6px 10px; font: inherit; font-size: 14px; margin-top: 4px; height: 38px; color: var(--text); background: #fff; border: 1px solid var(--border); border-radius: 8px; }
+.date-filters select:hover { border-color: #a8bca4; }
+.date-filters select:focus { border-color: var(--focus); }
 .filter-actions { display: flex; justify-content: flex-end; margin-top: 3px; }
 .filter-actions .text-button { padding: 5px 0; font-size: 14px; }
 .tags-toggle { display: flex; align-items: center; gap: 6px; }
@@ -151,7 +153,8 @@ input:focus { border-color: var(--focus); }
 .account-controls { min-width: 0; }
 .account-status { font-size: 16px; color: var(--muted); }
 .account-profile { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.account-avatar { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; background: var(--sage); color: var(--forest); font-weight: 600; }
+.account-avatar { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; background: var(--sage); color: var(--forest); font-weight: 600; overflow: hidden; }
+.account-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .account-identity { min-width: 0; }
 .account-identity strong, .account-identity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
 .account-identity strong { font-size: 16px; color: var(--forest); }

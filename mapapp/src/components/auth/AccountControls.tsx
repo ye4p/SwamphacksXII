@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { Avatar, AvatarFallback, AvatarImage } from "../ui/Avatar";
 
 export default function AccountControls() {
   const { isLoading, isAuthenticated, error, login, logout, user, refetch } = useAuth();
@@ -22,12 +23,17 @@ export default function AccountControls() {
     }
   }
 
+  const initials = (user?.name ?? user?.email ?? "U").charAt(0).toUpperCase();
+
   return (
     <div className="account-controls">
       <nav className="auth-actions" aria-label="Account" aria-busy={isLoading || pending}>
         {isLoading ? <span className="account-status" role="status">Loading account…</span> : isAuthenticated ? <>
             <span className="account-profile" title={user?.email ?? user?.name ?? undefined}>
-            <span className="account-avatar" aria-hidden="true">{(user?.name ?? user?.email ?? "U").charAt(0).toUpperCase()}</span>
+            <Avatar className="account-avatar">
+              {user?.picture ? <AvatarImage src={user.picture} alt={user?.name ?? user?.email ?? "User avatar"} /> : null}
+              <AvatarFallback>{initials}</AvatarFallback>
+            </Avatar>
             <span className="account-identity"><strong>{user?.name ?? "Your account"}</strong>{user?.email && <small>{user.email}</small>}</span>
           </span>
           <button type="button" className="outline-button" disabled={pending} onClick={() => void authenticate("logout")}>Log out</button>

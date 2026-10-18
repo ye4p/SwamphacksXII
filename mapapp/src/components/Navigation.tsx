@@ -95,7 +95,7 @@ export default function Navigation() {
                     className="group flex items-center gap-2 rounded-full border border-border bg-card/60 py-1 pl-1 pr-2.5 text-sm transition-colors hover:bg-card"
                   >
                     <Avatar className="h-6 w-6 ring-1 ring-inset ring-border">
-                      <AvatarImage src={user.imageUrl ?? undefined} referrerPolicy="no-referrer" />
+                      <AvatarImage src={user.imageUrl ?? (user as { picture?: string | null }).picture ?? undefined} referrerPolicy="no-referrer" />
                       <AvatarFallback className="text-[11px]">
                         {(user.name?.[0] ?? user.email?.[0] ?? '?').toUpperCase()}
                       </AvatarFallback>

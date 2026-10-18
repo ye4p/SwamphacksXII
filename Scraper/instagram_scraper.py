@@ -34,18 +34,20 @@ def get_image_urls(post):
 
 
 
-def collect_posts():
+def collect_posts(handles=None, *, progress=True):
     """Collect post metadata and keep failures alongside successful results."""
     result = {"posts": [], "errors": []}
-    if not CLUB_HANDLES:
+    # Explicit input never mutates module settings or falls back on an empty list.
+    handles = CLUB_HANDLES if handles is None else handles
+    if not handles:
         result["errors"].append({"stage": "settings", "message":
                                  "Add club usernames to CLUB_HANDLES first."})
         return result
 
-    if (len(CLUB_HANDLES) > MAX_CLUBS or type(POSTS_PER_ACCOUNT) is not int
+    if (len(handles) > MAX_CLUBS or type(POSTS_PER_ACCOUNT) is not int
             or not 1 <= POSTS_PER_ACCOUNT <= MAX_POSTS_PER_ACCOUNT
             or any(not isinstance(handle, str) or not re.fullmatch(r"[A-Za-z0-9_.]{1,30}", handle)
-                   for handle in CLUB_HANDLES)):
+                   for handle in handles)):
         result["errors"].append({"stage": "settings", "code": "invalid_config",
             "message": "Check club usernames and configured club/post limits."})
         return result
@@ -65,8 +67,9 @@ def collect_posts():
     # Do not automatically retry starting a billable job: a lost response may
     # hide an already-started run. Read-only dataset requests can be retried later.
     client = ApifyClient(token, max_retries=1, timeout_max=timedelta(seconds=APIFY_RUN_SECONDS + 15))
-    for handle in dict.fromkeys(CLUB_HANDLES):
-        print(f"Collecting posts from @{handle} through Apify...", file=sys.stderr)
+    for handle in dict.fromkeys(handles):
+        if progress:
+            print(f"Collecting posts from @{handle} through Apify...", file=sys.stderr)
         try:
             # Each call starts a hosted job and may consume Apify credits.
             run = client.actor(APIFY_ACTOR).call(run_input={

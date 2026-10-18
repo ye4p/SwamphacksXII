@@ -25,6 +25,25 @@ else:
     from event_output import format_result, check_output_settings
 
 
+def run_scraper(source, organizations, existing_events, create_event_id):
+    """Server entry point: return only new Event dictionaries, never JSON or exits.
+
+    source: 'instagram' or 'gatorconnect' ('gator connect' is also accepted).
+    organizations: dictionaries with your DB id, optional handle and conURL.
+    existing_events: the server's current Event[] snapshot for duplicate checks.
+    create_event_id: synchronous zero-argument callback returning a unique int.
+
+    This is blocking network/browser work; call from a worker thread/job, not
+    directly on an async server's event loop. See README for matching rules and
+    partial-failure handling. Importing this module does not start a scrape.
+    """
+    if __package__:
+        from .server_runner import run
+    else:
+        from server_runner import run
+    return run(source, organizations, existing_events, create_event_id)
+
+
 def main():
     """Read command-line options, run the requested mode, and print JSON."""
     parser = argparse.ArgumentParser(description=__doc__)

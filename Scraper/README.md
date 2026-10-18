@@ -1,5 +1,81 @@
 # Scraper
 
+## Importing from a scheduled server job
+
+Use the synchronous wrapper in `main.py`; it takes exactly four arguments:
+
+```python
+from Scraper.main import run_scraper
+from Scraper.server_runner import ScraperRunError
+
+organizations = [
+    {"id": 7, "name": "ACM", "handle": "uf.acm", "conURL": None},
+    {"id": 8, "name": "ASME", "handle": "", "conURL": "https://gatorconnect.ufl.edu/organization/asme"},
+]
+
+# Fetch this snapshot from your DB before each job. Include events from BOTH
+# sources and all relevant organizations so cross-source duplicates are found.
+existing_events = load_events_from_database()
+
+try:
+    new_events = run_scraper(
+        "instagram",          # Or "gatorconnect" / "gator connect".
+        organizations,
+        existing_events,      # List of dictionaries matching the Event schema.
+        allocate_event_id,    # Your sync function: no arguments, returns an int.
+    )
+except ScraperRunError as failure:
+    new_events = failure.events  # Valid events whose IDs were already allocated.
+    report_scraper_issues(failure.issues)
+
+save_events_to_database(new_events)
+```
+
+`load_events_from_database`, `allocate_event_id`, `report_scraper_issues`, and
+`save_events_to_database` above are your server functions, not scraper functions.
+There are no extra required arguments. API credentials remain environment
+variables. Per-organization collection budgets remain in `config.py` (currently
+five posts/events). Large organization lists are batched to the collector cap.
+Missing/blank `handle` or `conURL` entries are skipped for the selected source;
+empty input never falls back to the organizations in config. Unrelated fields
+such as `name` are ignored. Caller dictionaries and global config are not changed.
+
+The wrapper returns **only new `Event` dictionaries**. Organization IDs come
+directly from your input. Event IDs come only from the callback, after schema
+validation and duplicate checks. This server path bypasses both dummy database
+functions; the existing CLI still supports its separate dummy lookup behavior.
+
+Matching is deterministic: the same organization and exact UTC start instant
+is a duplicate regardless of title; different organizations match only on
+normalized title plus exact UTC start instant. Unicode, case, and whitespace
+are normalized, and equivalent timestamp offsets match. Location is not part
+of identity. Matches against the existing snapshot AND earlier candidates in
+this run are suppressed. Existing records are not updated or overwritten;
+changed venues/titles at the same organization/time still count as duplicates.
+Incomplete records are logged and skipped without allocating an ID.
+
+GatorConnect includes saved unchanged selected records because scraper state
+does not prove that the server saved an event. Gemini extraction caching and
+cooldowns still apply. Duplicate detection here avoids duplicate output and
+ID allocation; new source posts can still require Gemini and Places calls before
+their event identity is known. This is not cross-post fuzzy matching.
+
+The wrapper does not print JSON or call `sys.exit`. Normal progress is disabled;
+warnings use Python logging, and collection/provider failures raise
+`ScraperRunError` with safe `.issues` and any valid `.events`. Invalid caller input
+raises `ValueError` before paid collection. Callback exceptions, invalid IDs, and
+IDs already in the supplied snapshot/current output stop allocation immediately,
+without callback retries. An allocator that allocates then throws can consume an
+ID externally; no scraper can roll that back. Persist partial events before a
+retry and refresh the existing-events snapshot to avoid allocating again.
+
+This function performs blocking I/O and uses synchronous Playwright. In an async
+server, run the entire call in a worker thread (for example, `asyncio.to_thread`),
+and provide a synchronous, thread-safe ID allocator. One active wrapper run is
+allowed per Python process. Serialize the full fetch/scrape/save job in your
+scheduler; separate processes or independent backend writes still need database
+uniqueness/transaction protection. A stale snapshot alone cannot prevent races.
+
 ## Frontend Event output
 
 The default CLI output is now a flat JSON `Event[]` array matching the frontend

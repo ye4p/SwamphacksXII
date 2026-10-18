@@ -25,7 +25,7 @@ class RevisionTests(unittest.TestCase):
         self.clock = patch("Scraper.gatorconnect_pipeline.time.time", return_value=1000).start()
         self.addCleanup(patch.stopall)
         self.collected = {"posts": [post()], "errors": []}
-        self.collect = patch.object(pipeline, "collect_gatorconnect", side_effect=lambda: deepcopy(self.collected)).start()
+        self.collect = patch.object(pipeline, "collect_gatorconnect", side_effect=lambda *args, **kwargs: deepcopy(self.collected)).start()
         self.extract = patch.object(pipeline, "extract_events", side_effect=lambda *a, **k: {"image_text": "", "events": [event()]}).start()
         self.resolver = MagicMock()
         self.resolver.resolve.side_effect = lambda e: {**e, "location_status": "resolved", "latitude": 29.65, "longitude": -82.34}

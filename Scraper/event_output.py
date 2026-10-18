@@ -106,9 +106,13 @@ def event_timestamp(event):
     return instants.pop().isoformat().replace('+00:00', 'Z')
 
 
-def format_event(event, post, *, organization_id=None):
+def format_event(event, post, *, organization_id=None, defer_id=False):
     """Build exactly the requested fields, or explain why export is impossible."""
     organization_key = organization_identity(post, organization_id)
+    # Server mode validates all fields without touching the dummy DB or spending
+    # an ID. Only after deduplication does the caller request a real event ID.
+    if defer_id and not positive_id(organization_id):
+        raise ValueError('Deferred-ID formatting requires a valid organization ID.')
     # Preserve an explicit GatorConnect source timestamp/offset rather than
     # reinterpreting an out-of-town event as Gainesville time.
     source_start = (post.get('source_details') or {}).get('starts_on')
@@ -134,21 +138,24 @@ def format_event(event, post, *, organization_id=None):
     # Source + title + timestamp distinguishes events in a carousel. Replace the
     # dummy lookup with stored source/event associations when connecting the DB.
     normalized_title = ' '.join(unicodedata.normalize('NFKC', title).casefold().split())
-    try:
-        identifiers = fetch_event_ids(organization_key, f'{identity}:{normalized_title}:{timestamp}')
-    except Exception:
-        # Driver exceptions can contain credentials or SQL. Do not print them.
-        raise ValueError('Database ID lookup failed; event not exported.') from None
-    if not isinstance(identifiers, dict) or not all(positive_id(identifiers.get(key))
-                                                  for key in ('id', 'organization_id')):
-        raise ValueError('Database lookup did not return valid event and organization IDs.')
+    identifiers = {'organization_id': organization_id}
+    if not defer_id:
+        try:
+            identifiers = fetch_event_ids(organization_key, f'{identity}:{normalized_title}:{timestamp}')
+        except Exception:
+            # Driver exceptions can contain credentials or SQL. Do not print them.
+            raise ValueError('Database ID lookup failed; event not exported.') from None
+        if not isinstance(identifiers, dict) or not all(positive_id(identifiers.get(key))
+                                                      for key in ('id', 'organization_id')):
+            raise ValueError('Database lookup did not return valid event and organization IDs.')
     notes = [f'Source: {identity}', f'Venue: {event.get("location") or address}']
     notes.extend(w for w in event.get('validation_warnings', []) if isinstance(w, str))
     if event.get('location_warning'):
         notes.append(str(event['location_warning']))
     tags = event.get('Tags') or []
     return {
-        'id': identifiers['id'], 'organization_id': identifiers['organization_id'], 'timestamp': timestamp,
+        **({'id': identifiers['id']} if not defer_id else {}),
+        'organization_id': identifiers['organization_id'], 'timestamp': timestamp,
         'title': title.strip(), 'description': event.get('description') if isinstance(event.get('description'), str) else '',
         'address': address.strip(), 'longitude': event['longitude'], 'latitude': event['latitude'],
         'payload': {'notes': '\n'.join(dict.fromkeys(notes)),

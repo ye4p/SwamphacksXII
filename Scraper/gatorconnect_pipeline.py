@@ -248,23 +248,23 @@ def process_gatorconnect_post(post, resolver, *, store=None):
     return processed, errors
 
 
-def scrape_gatorconnect(*, include_unchanged=False):
+def scrape_gatorconnect(*, include_unchanged=False, organization_urls=None, progress=True):
     """Emit new/changed records; unchanged or cooling-down revisions skip APIs."""
     # Opening state and acquiring the run lock happens BEFORE collection or paid
     # calls. A broken database never silently falls back to duplicate processing.
     with GatorConnectState() as store:
-        collected = collect_gatorconnect()
+        collected = collect_gatorconnect(organization_urls, progress=progress)
         result = {"posts": [], "errors": list(collected["errors"]),
                   "warnings": list(collected.get("warnings", [])), "processed_posts": 0,
                   "unchanged_posts": 0, "deferred_posts": 0, "reused_extractions": 0}
         resolver = PlacesResolver()
         try:
-            return process_collected(collected, result, resolver, store, include_unchanged)
+            return process_collected(collected, result, resolver, store, include_unchanged, progress=progress)
         finally:
             resolver.close()
 
 
-def process_collected(collected, result, resolver, store, include_unchanged):
+def process_collected(collected, result, resolver, store, include_unchanged, *, progress=True):
     """Persist revisions while keeping stdout a recoverable, explicit change feed."""
     seen = set()
     for post in collected["posts"]:
@@ -282,7 +282,8 @@ def process_collected(collected, result, resolver, store, include_unchanged):
                 result["posts"].append({**previous["processed"], "change_type": "unchanged"})
             continue
 
-        print("Processing selected GatorConnect event revision...", file=sys.stderr)
+        if progress:
+            print("Processing selected GatorConnect event revision...", file=sys.stderr)
         try:
             processed, errors = process_gatorconnect_post(post, resolver, store=store)
             result["errors"].extend(errors)

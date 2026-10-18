@@ -43,7 +43,7 @@ def process_post(post):
 
 
 
-def scrape_events():
+def scrape_events(handles=None, *, progress=True, use_database=True):
     """Connect collection to extraction, preserving errors from both steps."""
     # Check setup before starting a potentially billable Apify run.
     if not os.getenv("GEMINI_API_KEY"):
@@ -56,12 +56,14 @@ def scrape_events():
         return {"posts": [], "errors": [{"stage": "settings", "code": "missing_dependency",
                 "message": "Install dependencies: python -m pip install requests google-genai"}]}
 
-    db_events = fetch_events(date.today().isoformat())
+    # The server wrapper supplies its own database snapshot and deduplicates
+    # exact timestamps later; it must not also use this legacy same-day filter.
+    db_events = fetch_events(date.today().isoformat()) if use_database else []
     db_keys = set()
     for event in db_events:
         club = event.get("club") or event.get("organization") or event.get("organization_handle")
         db_keys.add((str(club).casefold() if club is not None else None, event.get("date")))
-    scraped = collect_posts()
+    scraped = collect_posts(handles, progress=progress)
     result = {"posts": [], "errors": list(scraped["errors"]), "processed_posts": 0}
     seen = set()
     for post in scraped["posts"]:
@@ -70,7 +72,8 @@ def scrape_events():
             continue
         if identity:
             seen.add(identity)
-        print("Extracting events from collected post...", file=sys.stderr)
+        if progress:
+            print("Extracting events from collected post...", file=sys.stderr)
         try:
             processed = process_post(post)
             result["processed_posts"] += 1

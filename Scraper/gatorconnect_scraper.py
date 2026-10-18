@@ -206,7 +206,7 @@ def read_detail(page, record, org_url):
     }
 
 
-def collect_gatorconnect(organization_urls=None, *, now=None):
+def collect_gatorconnect(organization_urls=None, *, now=None, progress=True):
     """Return the same posts/errors envelope as the Instagram collector."""
     urls = config.GATORCONNECT_ORGANIZATION_URLS if organization_urls is None else organization_urls
     if not isinstance(urls, list) or not urls or len(urls) > config.MAX_CLUBS:
@@ -236,7 +236,8 @@ def collect_gatorconnect(organization_urls=None, *, now=None):
             page = context.new_page()
             page.set_default_timeout(config.GATORCONNECT_PAGE_SECONDS * 1000)
             for url in urls:
-                print(f"Collecting public GatorConnect events: {url}", file=sys.stderr)
+                if progress:
+                    print(f"Collecting public GatorConnect events: {url}", file=sys.stderr)
                 try:
                     records = collect_listing(page, url, warnings=result["warnings"])
                     # Shared IDs already collected must not consume this club's

@@ -63,6 +63,8 @@ logger = logging.getLogger(__name__)
 
 from core.tigerdata import TigerData
 
+from "../Scraper/main.py" import run_scraper
+
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
@@ -784,7 +786,14 @@ async def get_recommendations_organizations(
     # Placeholder: return empty list until recommendation logic is implemented
     return {"organizations": []}
 
+TOTALEVENTS = 0
+def GetNewEventID():
+    global TOTALEVENTS
+    TOTALEVENTS += 1
+    return TOTALEVENTS
 
 @app.get("/api/runscrape")
 async def get_recommendations_organizations() -> Dict[str, Any]:
-    
+    orgs = await db.get_all_organizations()
+    events = await db.get_current_events()
+    return run_scraper("instagram", orgs, events, GetNewEventID)

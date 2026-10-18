@@ -15,7 +15,6 @@ Required environment variables:
   AUTH0_DOMAIN        e.g. example.us.auth0.com
   AUTH0_CLIENT_ID     Auth0 application client id
   AUTH0_CLIENT_SECRET Auth0 application client secret
-  AUTH0_AUDIENCE      (optional) audience claim expected in Auth0 id_tokens
   AUTH0_CALLBACK_URL  redirect URL registered in Auth0, e.g.
                       https://api.example.com/auth/auth0/callback
   FRONTEND_URL        origin users are sent to after login/logout
@@ -72,7 +71,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1008
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
 AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
 AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
-AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE") or AUTH0_CLIENT_ID
 AUTH0_CALLBACK_URL = os.getenv(
     "AUTH0_CALLBACK_URL", "http://localhost:8000/auth/auth0/callback"
 )
@@ -150,7 +148,8 @@ async def verify_auth0_id_token(id_token: str) -> Dict[str, Any]:
             id_token,
             pem,
             algorithms=["RS256"],
-            audience=AUTH0_AUDIENCE,
+            # ID tokens identify this application, not a custom API resource.
+            audience=AUTH0_CLIENT_ID,
             issuer=ISSUER,
         )
     except JWTError as exc:
@@ -389,8 +388,8 @@ async def auth0_login(
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     }
-    if AUTH0_AUDIENCE:
-        params["audience"] = AUTH0_AUDIENCE
+    # This flow only needs an ID token. Requesting a custom API audience can
+    # reject login when that resource is not registered in Auth0.
 
     authorize_url = f"https://{AUTH0_DOMAIN}/authorize?{urlencode(params)}"
     redirect = RedirectResponse(authorize_url)

@@ -14,7 +14,9 @@ Required environment variables:
   SECRET_KEY          signing key for app session JWTs
   AUTH0_DOMAIN        e.g. example.us.auth0.com
   AUTH0_CLIENT_ID     Auth0 application client id
-  AUTH0_CLIENT_SECRET Auth0 application client secret
+  AUTH0_CLIENT_SECRET Auth0 application client secret (Post/Basic methods)
+  AUTH0_TOKEN_ENDPOINT_AUTH_METHOD client_secret_post (default),
+                      client_secret_basic, or none; must match Auth0 settings
   AUTH0_CALLBACK_URL  redirect URL registered in Auth0, e.g.
                       https://api.example.com/auth/auth0/callback
   FRONTEND_URL        origin users are sent to after login/logout
@@ -74,6 +76,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1008
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
 AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
 AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
+AUTH0_TOKEN_ENDPOINT_AUTH_METHOD = os.getenv(
+    "AUTH0_TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post"
+).strip().lower()
 AUTH0_CALLBACK_URL = os.getenv(
     "AUTH0_CALLBACK_URL", "http://localhost:8000/auth/auth0/callback"
 )
@@ -87,6 +92,34 @@ _CORS_DEFAULT = f"{FRONTEND_URL},http://localhost:3000,http://localhost:5173"
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", _CORS_DEFAULT).split(",") if o.strip()]
 
 ISSUER = f"https://{AUTH0_DOMAIN}/" if AUTH0_DOMAIN else ""
+
+
+def _validate_auth0_config() -> None:
+    if not AUTH0_DOMAIN or not AUTH0_CLIENT_ID:
+        raise HTTPException(500, "Auth0 domain and client ID must be configured on the backend")
+    if AUTH0_TOKEN_ENDPOINT_AUTH_METHOD not in {"client_secret_post", "client_secret_basic", "none"}:
+        raise HTTPException(500, "Invalid AUTH0_TOKEN_ENDPOINT_AUTH_METHOD configuration")
+    if AUTH0_TOKEN_ENDPOINT_AUTH_METHOD != "none" and not AUTH0_CLIENT_SECRET:
+        raise HTTPException(500, "AUTH0_CLIENT_SECRET is missing from the backend environment")
+
+
+def _auth0_token_request(code: str, code_verifier: str) -> dict:
+    _validate_auth0_config()
+    payload = {
+        "grant_type": "authorization_code",
+        "client_id": AUTH0_CLIENT_ID,
+        "code": code,
+        "redirect_uri": AUTH0_CALLBACK_URL,
+        "code_verifier": code_verifier,
+    }
+    options = {"json": payload}
+    if AUTH0_TOKEN_ENDPOINT_AUTH_METHOD == "client_secret_post":
+        payload["client_secret"] = AUTH0_CLIENT_SECRET
+    elif AUTH0_TOKEN_ENDPOINT_AUTH_METHOD == "client_secret_basic":
+        options["auth"] = httpx.BasicAuth(AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET)
+    # Public PKCE clients explicitly use "none". Never downgrade or retry a
+    # rejected confidential-client exchange without authentication.
+    return options
 
 # -----------------------------------------------------------------------------
 # Security helpers
@@ -202,9 +235,9 @@ def _auth0_exchange_failure(token_response: httpx.Response) -> JSONResponse:
     # Never log the request payload, raw response, code, verifier, or secret.
     # Only expose known OAuth error identifiers and our own diagnostic text.
     messages = {
-        "invalid_client": "Check the backend Auth0 client ID and secret, and set the application's Token Endpoint Authentication Method to Post.",
-        "unauthorized_client": "Check that the Auth0 application allows the Authorization Code grant and uses Token Endpoint Authentication Method Post.",
-        "access_denied": "Check the backend Auth0 client credentials and the application's Token Endpoint Authentication Method (this backend uses Post).",
+        "invalid_client": "Check the backend Auth0 client ID and secret, and ensure AUTH0_TOKEN_ENDPOINT_AUTH_METHOD matches the Auth0 application setting.",
+        "unauthorized_client": "Check that the Auth0 application allows the Authorization Code grant and that AUTH0_TOKEN_ENDPOINT_AUTH_METHOD matches its setting.",
+        "access_denied": "Check the backend Auth0 client credentials and the application's Token Endpoint Authentication Method (must match AUTH0_TOKEN_ENDPOINT_AUTH_METHOD).",
         "invalid_grant": "Start a fresh login. If this persists, check the callback URL and PKCE configuration; authorization codes expire and can only be used once.",
         "invalid_request": "Check the Auth0 callback URL and token exchange configuration.",
     }
@@ -219,6 +252,7 @@ def _auth0_exchange_failure(token_response: httpx.Response) -> JSONResponse:
         {
             "detail": "Auth0 token exchange failed",
             "auth0_error": error,
+            "auth_method": AUTH0_TOKEN_ENDPOINT_AUTH_METHOD,
             "hint": messages.get(error, "Check the Auth0 tenant logs for the failed code exchange."),
         },
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -402,10 +436,7 @@ async def auth0_login(
     response: Response,
     redirect_to: Optional[str] = Query(None),
 ) -> RedirectResponse:
-    if not AUTH0_DOMAIN or not AUTH0_CLIENT_ID:
-        raise HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR, "Auth0 is not configured"
-        )
+    _validate_auth0_config()
 
     state = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(64)
@@ -483,18 +514,11 @@ async def auth0_callback(
         _clear_auth0_cookies(failure)
         return failure
 
-    token_payload = {
-        "grant_type": "authorization_code",
-        "client_id": AUTH0_CLIENT_ID,
-        "client_secret": AUTH0_CLIENT_SECRET,
-        "code": code,
-        "redirect_uri": AUTH0_CALLBACK_URL,
-        "code_verifier": code_verifier,
-    }
+    token_options = _auth0_token_request(code, code_verifier)
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         token_resp = await client.post(
-            f"https://{AUTH0_DOMAIN}/oauth/token", json=token_payload
+            f"https://{AUTH0_DOMAIN}/oauth/token", **token_options
         )
 
     if token_resp.status_code >= 400:

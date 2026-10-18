@@ -731,7 +731,7 @@ async def dangerous(current_user: Dict[str, Any] = Depends(get_current_user)):
         "A default \"organization\" for random UF Events.",
         {"type": "system_org"},
     )
-    await db.assign_membership(admin_id, org_id, "president")
+    await db.assign_membership(admin_id, def_org_id, "president")
 
     # Sample organization
     org_id = await db.upsert_organization(

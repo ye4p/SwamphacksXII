@@ -31,7 +31,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Optional
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlparse
 
 from dotenv import load_dotenv
 from fastapi import (
@@ -242,14 +242,17 @@ app.add_middleware(
 # Auth dependencies
 # -----------------------------------------------------------------------------
 async def get_current_user(
+    request: Request,
     authorization: Optional[str] = Header(None),
-    session_token: Optional[str] = Cookie(None),
 ) -> Dict[str, Any]:
     token: Optional[str] = None
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1]
-    elif session_token:
-        token = session_token
+    else:
+        cookie_name = COOKIE_NAME
+        session_token = request.cookies.get(cookie_name) if cookie_name else None
+        if session_token:
+            token = session_token
 
     if not token:
         raise HTTPException(
@@ -377,25 +380,6 @@ async def auth0_login(
     digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     code_challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
-    response.set_cookie(
-        "auth0_state",
-        state,
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="lax",
-        path="/",
-        max_age=600,
-    )
-    response.set_cookie(
-        "auth0_code_verifier",
-        code_verifier,
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="lax",
-        path="/",
-        max_age=600,
-    )
-
     params = {
         "response_type": "code",
         "client_id": AUTH0_CLIENT_ID,
@@ -409,7 +393,36 @@ async def auth0_login(
         params["audience"] = AUTH0_AUDIENCE
 
     authorize_url = f"https://{AUTH0_DOMAIN}/authorize?{urlencode(params)}"
-    return RedirectResponse(authorize_url)
+    redirect = RedirectResponse(authorize_url)
+    redirect.set_cookie(
+        "auth0_state",
+        state,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        path="/",
+        max_age=600,
+    )
+    redirect.set_cookie(
+        "auth0_code_verifier",
+        code_verifier,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        path="/",
+        max_age=600,
+    )
+    if redirect_to:
+        redirect.set_cookie(
+            "auth0_redirect_to",
+            redirect_to,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax",
+            path="/",
+            max_age=600,
+        )
+    return redirect
 
 
 @app.get("/auth/auth0/callback")
@@ -424,7 +437,8 @@ async def auth0_callback(
     code_verifier = request.cookies.get("auth0_code_verifier")
 
     if not code or not state or not expected_state or state != expected_state:
-        _clear_auth0_cookies(response)
+        redirect = RedirectResponse(FRONTEND_URL)
+        _clear_auth0_cookies(redirect)
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Invalid Auth0 request state"
         )
@@ -444,6 +458,8 @@ async def auth0_callback(
         )
 
     if token_resp.status_code >= 400:
+        redirect = RedirectResponse(FRONTEND_URL)
+        _clear_auth0_cookies(redirect)
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Auth0 token exchange failed"
         )
@@ -451,6 +467,8 @@ async def auth0_callback(
     tokens = token_resp.json()
     id_token = tokens.get("id_token")
     if not id_token:
+        redirect = RedirectResponse(FRONTEND_URL)
+        _clear_auth0_cookies(redirect)
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Auth0 did not return an id_token"
         )
@@ -464,13 +482,23 @@ async def auth0_callback(
     user_id = await db.upsert_auth0_user(auth0_id, email, name, picture)
     app_token = create_app_token(user_id, email)
 
-    target = redirect_to or FRONTEND_URL
-    if not target.startswith("/") and target != FRONTEND_URL:
+    cookie_redirect = request.cookies.get("auth0_redirect_to")
+    target = redirect_to or cookie_redirect or FRONTEND_URL
+    if target and not (target.startswith("/") or target.startswith("http://") or target.startswith("https://")):
+        target = FRONTEND_URL
+    if target and (target.startswith("http://") or target.startswith("https://")):
+        parsed = urlparse(target)
+        fparsed = urlparse(FRONTEND_URL)
+        if parsed.scheme != fparsed.scheme or parsed.netloc != fparsed.netloc:
+            target = FRONTEND_URL
+    if not target:
         target = FRONTEND_URL
 
-    _set_session_cookie(response, app_token)
-    _clear_auth0_cookies(response)
-    return RedirectResponse(target)
+    redirect = RedirectResponse(target)
+    _set_session_cookie(redirect, app_token)
+    _clear_auth0_cookies(redirect)
+    redirect.delete_cookie("auth0_redirect_to", path="/")
+    return redirect
 
 
 @app.get("/auth/auth0/logout")
@@ -478,15 +506,21 @@ async def auth0_logout(
     response: Response,
     redirect_to: Optional[str] = Query(None),
 ) -> RedirectResponse:
-    _clear_session_cookie(response)
     target = redirect_to or FRONTEND_URL
-    if not target.startswith("/") and target != FRONTEND_URL:
+    if target and (target.startswith("http://") or target.startswith("https://")):
+        parsed = urlparse(target)
+        fparsed = urlparse(FRONTEND_URL)
+        if parsed.scheme != fparsed.scheme or parsed.netloc != fparsed.netloc:
+            target = FRONTEND_URL
+    if not target:
         target = FRONTEND_URL
     logout_url = (
         f"https://{AUTH0_DOMAIN}/v2/logout?"
         f"client_id={AUTH0_CLIENT_ID}&returnTo={quote(target)}"
     )
-    return RedirectResponse(logout_url)
+    redirect = RedirectResponse(logout_url)
+    _clear_session_cookie(redirect)
+    return redirect
 
 
 @app.post("/auth/logout")

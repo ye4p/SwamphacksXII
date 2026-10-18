@@ -1,10 +1,17 @@
 export interface Event {
   id: number;
+  organization_id: number,
+  timestamp: string;
   title: string;
-  address: string;
-  lat: number;
-  lng: number;
-  start_time: string;
   description: string;
-  tags: string[]; // 'food' is also provided as one of the tags, so don't need it as separate boolean.
+  address: string;
+  longitude: number;
+  latitude: number;
+  payload: Payload;
 }
+
+export interface Payload {
+  notes: string,
+  tags: string[],
+}
+

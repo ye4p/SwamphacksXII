@@ -10,7 +10,6 @@ const eventIcon = icon("custom-marker", config.marker.eventColor);
 const userIcon = icon("user-marker", config.marker.userColor);
 function MapPosition({ position }: { position: [number, number] | null }) {
   const map = useMap();
-  useEffect(() => { if (position) map.setView(position); }, [map, position]);
   useEffect(() => { const observer = new ResizeObserver(() => map.invalidateSize()); observer.observe(map.getContainer()); return () => observer.disconnect(); }, [map]);
   return null;
 }

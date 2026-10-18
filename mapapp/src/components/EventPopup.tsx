@@ -14,6 +14,7 @@ export default function EventPopup({ event }: EventPopupProps) {
   return (
     <div className="event-popup">
       <h3>{event.title}</h3>
+      {event.address && <div className="meta">{event.address}</div>}
       <div className="meta">{formatEventDate(event.start_time)}</div>
       <div className="meta">{event.description}</div>
       {is_food && <div className={`meta food`}>{"Food provided"}</div>}

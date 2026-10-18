@@ -1,6 +1,6 @@
 """Collect Instagram or public GatorConnect events and extract details with Gemini.
 
-Install: python -m pip install "apify-client>=3,<4" google-genai requests
+Install: python -m pip install "apify-client>=3,<4" google-genai requests python-dotenv Pillow
 Run from the project folder: python Scraper/main.py
 GatorConnect: python Scraper/main.py --source gatorconnect (see Scraper/README.md).
 Test Gemini: python Scraper/main.py --images flyer.jpg --caption "Club meeting"

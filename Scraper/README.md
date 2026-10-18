@@ -1,5 +1,33 @@
 # Scraper
 
+## Instagram OCR setup
+
+Instagram images are transcribed with [OCR.space](https://ocr.space/ocrapi).
+Gemini receives the resulting text plus the post caption to extract events;
+it does not receive Instagram image bytes. Carousel images retain numbered
+labels, and the original OCR text is preserved in `image_text` for validation.
+Cached extractions skip both OCR and Gemini calls.
+
+Set `OCR_SPACE_API_KEY` alongside `GEMINI_API_KEY` in the scraper process:
+
+```bash
+export OCR_SPACE_API_KEY='your-ocr-space-key'
+```
+
+PowerShell: `$env:OCR_SPACE_API_KEY = "your-ocr-space-key"`.
+The scraper automatically loads `backend/.env`; you can put
+`OCR_SPACE_API_KEY=your-ocr-space-key` there instead. Existing process environment
+variables take precedence. Keep keys out of source control.
+This integration uses the free endpoint with Engine 2 and one
+upload per image. JPEG/PNG images below 1 MB are uploaded unchanged. Larger images
+are automatically compressed to JPEG, reducing dimensions only when needed to
+fit below 1 MB. WebP is converted automatically; transparency is flattened onto
+white and EXIF orientation is applied during conversion. Originals are not modified.
+Compression requires Pillow and may reduce readability of very small text.
+OCR errors fail that post
+instead of silently extracting events from incomplete text. GatorConnect keeps
+its existing extraction path and does not require an OCR.space key.
+
 ## Importing from a scheduled server job
 
 Use the synchronous wrapper in `main.py`; it takes exactly four arguments:
@@ -158,7 +186,7 @@ From the project root, install the additional dependencies into your usual
 Python environment:
 
 ```powershell
-python -m pip install google-genai requests playwright
+python -m pip install google-genai requests playwright python-dotenv Pillow
 python -m playwright install chromium
 ```
 
@@ -170,8 +198,8 @@ $env:GOOGLE_MAPS_API_KEY = "your-google-maps-key"
 ```
 
 These are two separate keys. Do not put real keys in Python source or commit
-them. This launcher reads environment variables; it does not automatically load
-a `.env` file. Enable **Places API (New)** and billing in the Google Cloud project
+them. The scraper also loads `backend/.env` automatically without overriding
+existing environment variables. Enable **Places API (New)** and billing in the Google Cloud project
 that owns your Maps key; restrict that key to Places API (New). GatorConnect
 needs no Apify or geocode.maps.co key.
 

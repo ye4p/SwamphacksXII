@@ -89,9 +89,10 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(len(result['events']), 1)
 
     @patch.dict(os.environ, {'GEMINI_API_KEY': 'test-key'})
+    @patch.object(gemini_extractor, 'extract_image_text', return_value='Host Technical Workshops & Design Team Projects')
     @patch('requests.post')
     @patch('google.genai.Client')
-    def test_misclassified_catalog_makes_no_maps_calls(self, client, maps):
+    def test_misclassified_catalog_makes_no_maps_calls(self, client, maps, ocr):
         text = 'Host Technical Workshops & Design Team Projects'
         candidate = event(title='Technical Workshops', date=None, date_text=None, time=None,
                           location=None, supporting_text=text, announcement_type='specific_event')
@@ -123,9 +124,10 @@ class EvidenceTests(unittest.TestCase):
                       result["events"][0]["validation_warnings"])
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-gemini-key"})
+    @patch.object(gemini_extractor, 'extract_image_text', return_value='Officer introductions')
     @patch("requests.post")
     @patch("google.genai.Client")
-    def test_prompt_contract_and_empty_classification_skip_maps(self, client, maps):
+    def test_prompt_contract_and_empty_classification_skip_maps(self, client, maps, ocr):
         # Inspect what is sent to Gemini without making a model request. Actual
         # officer/recap classification quality still requires a live sample.
         generate = client.return_value.__enter__.return_value.models.generate_content

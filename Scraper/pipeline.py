@@ -21,7 +21,7 @@ else:
 
 
 def process_post(post):
-    """Download one post's photos, then send them together to Gemini."""
+    """Download post photos, transcribe with OCR.space, then extract with Gemini."""
     urls = post.get("image_urls")
     if not isinstance(urls, list) or not 1 <= len(urls) <= MAX_IMAGES:
         raise ScraperError("download", "image_count", f"Expected 1-{MAX_IMAGES} photo URLs.")
@@ -49,6 +49,9 @@ def scrape_events(handles=None, *, progress=True, use_database=True):
     if not os.getenv("GEMINI_API_KEY"):
         return {"posts": [], "errors": [{"stage": "settings", "code": "missing_gemini_key",
                 "message": "Set GEMINI_API_KEY in your terminal first."}]}
+    if not os.getenv("OCR_SPACE_API_KEY"):
+        return {"posts": [], "errors": [{"stage": "settings", "code": "missing_ocr_key",
+                "message": "Set OCR_SPACE_API_KEY in your terminal first."}]}
     try:
         import requests
         from google import genai

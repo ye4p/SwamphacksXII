@@ -180,7 +180,7 @@ class ServerRunnerTests(unittest.TestCase):
         self.assertEqual(len(failure.exception.events), 1)
         self.assertEqual(allocate.call_count, 2)
 
-    @patch.dict(os.environ, {'GEMINI_API_KEY': 'mock-key'})
+    @patch.dict(os.environ, {'GEMINI_API_KEY': 'mock-key', 'OCR_SPACE_API_KEY': 'mock-ocr'})
     def test_instagram_pipeline_forwards_handles_and_bypasses_legacy_database(self):
         from Scraper import pipeline
         with patch.object(pipeline, 'collect_posts', return_value=collected(post())) as collect, \

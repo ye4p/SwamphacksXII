@@ -20,7 +20,7 @@ def cache_key(images, caption, model, *, source_type="instagram"):
     """Image bytes detect changed flyers even when the post URL is unchanged."""
     digest = hashlib.sha256()
     # Changing prompts or validation code invalidates old extraction results.
-    for name in ('gemini_extractor.py', 'event_validator.py'):
+    for name in ('gemini_extractor.py', 'event_validator.py', 'ocr_extractor.py'):
         digest.update(Path(__file__).with_name(name).read_bytes())
     digest.update(json.dumps([source_type, caption, model, EVENT_TAGS]).encode())
     for data, mime in images:

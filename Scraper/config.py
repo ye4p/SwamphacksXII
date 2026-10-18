@@ -1,5 +1,13 @@
 """Club accounts and Apify settings; API keys stay in environment variables."""
 
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Use the same local credentials as the backend, regardless of working directory.
+# Explicit process environment variables retain precedence.
+load_dotenv(Path(__file__).resolve().parent.parent / "backend" / ".env", override=False)
+
 # Add club usernames here, without the @ symbol, as quoted strings.
 CLUB_HANDLES = ["ufsase"]
 POSTS_PER_ACCOUNT = 5

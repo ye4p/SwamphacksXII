@@ -12,7 +12,7 @@ if __package__:
     from . import config
     from .gatorconnect_state import GatorConnectState
     from .config import GATORCONNECT_MEDIA_HOSTS, MAX_IMAGE_BYTES, MAX_IMAGES
-    from .event_validator import normalized, validate_extraction
+    from .event_validator import normalized, validate_extraction, current_year
     from .gatorconnect_scraper import collect_gatorconnect, parse_start
     from .gemini_extractor import extract_events
     from .location_resolver import PlacesResolver
@@ -22,7 +22,7 @@ else:
     import config
     from gatorconnect_state import GatorConnectState
     from config import GATORCONNECT_MEDIA_HOSTS, MAX_IMAGE_BYTES, MAX_IMAGES
-    from event_validator import normalized, validate_extraction
+    from event_validator import normalized, validate_extraction, current_year
     from gatorconnect_scraper import collect_gatorconnect, parse_start
     from gemini_extractor import extract_events
     from location_resolver import PlacesResolver
@@ -115,8 +115,11 @@ def revision_key(post):
     code = hashlib.sha256()
     for filename in ("gemini_extractor.py", "event_validator.py", "gatorconnect_pipeline.py", "location_resolver.py"):
         code.update(Path(__file__).with_name(filename).read_bytes())
-    return fingerprint([post, os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
-                        config.EVENT_TAGS, config.GATORCONNECT_USE_GEMINI, code.hexdigest()])
+    # Saved validated extractions may contain inferred years. Refresh revisions
+    # at New Year rather than retaining last year's inferred date indefinitely.
+    return fingerprint([post, current_year(), os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
+                        config.EVENT_TAGS, config.GATORCONNECT_USE_GEMINI,
+                        config.UF_BUILDING_ALIASES, code.hexdigest()])
 
 
 def source_fallback(fields, caption, warning):

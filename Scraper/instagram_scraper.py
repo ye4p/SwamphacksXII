@@ -64,7 +64,7 @@ def collect_posts():
 
     # Do not automatically retry starting a billable job: a lost response may
     # hide an already-started run. Read-only dataset requests can be retried later.
-    client = ApifyClient(token, max_retries=0, timeout_max=timedelta(seconds=APIFY_RUN_SECONDS + 15))
+    client = ApifyClient(token, max_retries=1, timeout_max=timedelta(seconds=APIFY_RUN_SECONDS + 15))
     for handle in dict.fromkeys(CLUB_HANDLES):
         print(f"Collecting posts from @{handle} through Apify...", file=sys.stderr)
         try:
@@ -111,6 +111,7 @@ def collect_posts():
                     "image_urls": image_urls,
                 })
         except Exception as error:
+            # Preserve safe JSON errors and continue collecting other clubs.
             result["errors"].append({**error_record(error, "collection"),
                 "organization_handle": handle})
     return result

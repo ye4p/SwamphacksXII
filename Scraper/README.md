@@ -1,5 +1,77 @@
 # Scraper
 
+## Frontend Event output
+
+The default CLI output is now a flat JSON `Event[]` array matching the frontend
+interface. Internal collection/caching records keep their original structure.
+Only the final formatter in `event_output.py` changes the public output.
+
+```json
+[
+  {
+    "id": 42,
+    "organization_id": 7,
+    "timestamp": "2026-10-21T21:00:00Z",
+    "title": "ADT Exclusive Session",
+    "description": "Meet the ADT recruiting team.",
+    "address": "1885 Stadium Rd, Gainesville, FL 32611, USA",
+    "longitude": -82.347,
+    "latitude": 29.647,
+    "payload": {
+      "notes": "Source: https://www.instagram.com/p/example/\nVenue: Weimer Hall 1064",
+      "tags": ["professional", "networking"]
+    }
+  }
+]
+```
+
+The values above are illustrative. `database.fetch_event_ids(organization_key,
+event_key)` is an explicitly **dummy database lookup**, returning mock numeric
+event and organization IDs. Replace its body with your real parameterized lookup
+before using the output against a database. The formatter consumes those IDs;
+it does not create database rows. Missing IDs or lookup failures reject the event.
+The dummy keys include source/title/time; production lookup should use your
+stored source associations to preserve identity across renames/rescheduling.
+
+`timestamp` combines the date and explicit start time, defaults to
+`OUTPUT_TIMEZONE = "America/New_York"`, and converts to UTC. A GatorConnect
+source timestamp with an explicit offset takes precedence. Ambiguous AM/PM,
+unsupported timezones, DST gaps/overlaps, and missing dates/times are rejected
+instead of guessed. Explicit EST/EDT can disambiguate a DST overlap.
+
+Install timezone data, especially on Windows:
+
+```powershell
+python -m pip install tzdata
+python Scraper/main.py --source instagram
+python Scraper/main.py --source gatorconnect --include-unchanged
+```
+
+`Tags` becomes `payload.tags`. Source links, venue/room text, and review warnings
+become the string `payload.notes`. A missing description becomes an empty string.
+Missing addresses/coordinates cannot satisfy the non-null schema: those records
+are retained in stderr diagnostics under `rejected_events`, with their source
+details and reasons, instead of fake coordinates or invalid `Event` objects.
+Errors and counters also go to stderr; stdout contains only the array. Rejected
+events produce a nonzero partial-result exit status. No extra paid calls are
+made by formatting. Existing GatorConnect change-feed limits still apply.
+
+Use `--raw-output` to inspect the previous rich envelope, including incomplete
+events and location diagnostics. For saved-image schema output, supply the real
+organization ID; the event ID still comes from the dummy database lookup:
+
+```powershell
+python Scraper/main.py --raw-output
+python Scraper/main.py --images flyer.jpg --organization-id 7
+python Scraper/main.py --images flyer.jpg --raw-output
+```
+
+To save only frontend events, redirect stdout (not stderr):
+
+```powershell
+python Scraper/main.py --source instagram > events.json
+```
+
 ## GatorConnect setup and run
 
 GatorConnect is an additional source. It shares Gemini extraction and event
@@ -65,7 +137,7 @@ Existing commands still work:
 
 ```powershell
 python Scraper/main.py
-python Scraper/main.py --images flyer.jpg --caption "Club meeting"
+python Scraper/main.py --images flyer.jpg --caption "Club meeting" --raw-output
 ```
 
 The first uses Instagram and Google Places. Saved-image mode also keeps its
@@ -114,7 +186,7 @@ existing Google Places behavior. `--images` cannot be combined with
   stage commits independently; a geocoding failure does not undo Gemini work.
   Storage failures stop processing rather than silently disabling protection.
 
-## JSON fields and location behavior
+## Internal / --raw-output JSON fields and location behavior
 
 The envelope retains `posts`, `errors`, and `processed_posts`, and adds `warnings`,
 `unchanged_posts`, `deferred_posts`, and `reused_extractions`. A post can be
@@ -146,12 +218,65 @@ Google Places prefers the written address, then a validated `full_address`, then
 building searches. Explicit address locality is preserved instead of appending
 Gainesville to an out-of-town event.
 
-The existing Google resolver accepts one physical place with valid numeric
-coordinates and a matching address/venue/locality. Multiple results or a next
-page token stay ambiguous. A provider change cannot guarantee coordinates for
+Venue searches now use a simpler city context: `Weimer Hall 1064` becomes
+`Weimer Hall, Gainesville, FL`, while the source location keeps room 1064.
+`UF_BUILDING_ALIASES` in `config.py` maps known UF codes to building names:
+
+```python
+UF_BUILDING_ALIASES = {
+    "LIT": "Little Hall",
+}
+```
+
+`LIT 101` therefore searches for `Little Hall, Gainesville, FL`. Add verified
+code/name pairs to extend this dictionary. Codes match case-insensitively as
+whole building names after room removal; unknown codes and longer words are
+unchanged. Explicit addresses still take priority, and UF aliases are skipped
+for explicitly identified non-Gainesville cities. This changes only search
+preparation, not source text, coordinates, or candidate validation. It makes no
+additional Gemini or fallback Places calls. GatorConnect's per-run cache shares
+expanded/full-name queries, and dictionary changes invalidate saved revisions.
+
+The Google resolver checks up to five candidates in one Text Search request.
+It accepts exactly one physical place with valid numeric coordinates and a
+matching source address/venue/locality, even when other unrelated results were
+returned. When several names match a venue search, the only exact building-name
+match is preferred over broader listings (for example, `Weimer Hall` over
+`College of Journalism and Communications Weimer Hall`). Case/punctuation and
+UF campus labels are normalized; two equally exact matches remain ambiguous.
+This preference cannot override city/coordinate validation or street-address
+conflicts. Diagnostics record the selection reason. Remaining tied matches, or a next-page token indicating unseen
+results, stay ambiguous. Malformed candidates leave coordinates unresolved
+rather than creating a false unique match. A provider change cannot guarantee coordinates for
 missing or genuinely ambiguous venues. `enrichment_status: complete` concerns
 Gemini; check `location_status` separately for location success. Successful
 results identify `location_provider: "google_places"`.
+
+Each event also includes `location_diagnostics`: the query, candidate names and
+addresses, whether each matched, its acceptance/rejection reason, and whether
+the response was truncated. This explains null coordinates without logging API
+keys, headers, raw HTTP errors, or pagination tokens. Skipped lookups have a null
+query and no candidates. Reused lookups retain their original query diagnostics.
+
+Gemini is instructed to exclude officer introductions and recaps with incidental
+invitations, while keeping genuine announcements with incomplete details. A
+clearly applicable year printed elsewhere on the same flyer can complete a date
+(for example, `FALL 2026 SOCCER SOCIAL` and `October 15th`). Publication dates,
+and unrelated officer years cannot supply an event year. If no year appears in
+the source, Python now uses the computer/server's current year for a supported
+month/day (for example, `October 21st` or US-format `10/21`). It marks the event
+with `date_year_inferred: true` and a review warning. Explicit years are retained;
+vague dates, conflicting years, or invalid calendar dates remain unresolved.
+This policy also applies to old posts: it uses the run year, not the posting year.
+Python cannot establish whether a flyer header semantically applies to an event.
+General club activity catalogs should return no events. Gemini classifies
+announcements explicitly, and a narrow Python fallback also drops the observed
+ACM activity-list promotions without discarding genuine TBA announcements.
+`supporting_text` should be one verbatim excerpt from either the caption or OCR,
+not joined snippets; unverifiable quotes keep their review warning. OCR itself
+comes from Gemini, so validation is a consistency check, not independent proof.
+Changes to the extractor/validator invalidate extraction fingerprints: the next
+run can require fresh Gemini calls instead of reusing an old prompt's results.
 
 Old maps.co location caches and cooldowns are ignored. Google lookup reuse is
 in memory for the current run; no separate durable Google location cache is
@@ -163,11 +288,17 @@ to display all selected saved results.
 
 Page dates and locations take precedence over conflicting Gemini values, with
 review warnings. Source timestamps retain their explicit offsets in
-`source_details`; missing years or ambiguous timestamps are never filled in.
+`source_details`; these source timestamps are not rewritten. Extracted dates
+without a year use the marked current-year fallback described above. Persistent
+GatorConnect revisions refresh at New Year so inferred dates cannot remain
+silently tied to the previous year. Instagram's raw extraction cache is
+revalidated each run, including application of the current-year rule.
 The organization contact address and the site's existing coordinates are not
 used as substitutes for the event location.
 
-Progress is written to stderr and JSON to stdout. Exit codes retain the existing
+Progress is written to stderr and JSON to stdout. In default mode the JSON is
+the frontend array, with counters/rejections on stderr; `--raw-output` prints
+the rich envelope described in this section. Exit codes retain the existing
 behavior: 0 for success, 1 for failure without usable results, 2 for partial results.
 Deferred enrichment and incomplete discovery also produce a partial-result exit
 code when usable records are available.

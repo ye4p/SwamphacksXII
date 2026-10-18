@@ -176,10 +176,13 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(result["posts"]), 1)
         self.assertEqual(len(result["errors"]), 1)
 
-    def test_missing_year_not_invented(self):
+    @patch('Scraper.event_validator.current_year', return_value=2030)
+    def test_missing_year_uses_current_year_with_warning(self, year):
         raw = {"image_text": "Workshop October 18 at Little Hall", "events": [event(date_text="October 18")]}
         result = validate_extraction(raw, "", source_type="gatorconnect")["events"][0]
-        self.assertIsNone(result["date"])
+        self.assertEqual(result['date'], '2030-10-18')
+        self.assertTrue(result['date_year_inferred'])
+        self.assertIn('date: year not stated; assumed current year 2030.', result['validation_warnings'])
 
     def test_flyer_download_and_enrichment(self):
         item = post()

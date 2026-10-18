@@ -1,8 +1,22 @@
 """Club accounts and Apify settings; API keys stay in environment variables."""
 
 # Add club usernames here, without the @ symbol, as quoted strings.
-CLUB_HANDLES = ["uf.acm"]
+CLUB_HANDLES = ["ufsase"]
 POSTS_PER_ACCOUNT = 5
+
+OUTPUT_TIMEZONE = "America/New_York"  # UF's timezone; UTC export accounts for DST.
+
+# Known UF building codes used only to prepare Places searches. Add verified
+# code/name pairs here; do not put guessed street addresses or coordinates here.
+# Matching ignores case and requires the entire building code after room removal.
+UF_BUILDING_ALIASES = {
+    "LIT": "Little Hall",
+    "AND": "Anderson Hall",
+    "TUR": "Turlington Hall",
+    "Weimer": "Weimer Hall",
+    "WEIM": "Weimer Hall",
+    "MAT": "Matherly Hall"
+}
 
 # Set APIFY_API_TOKEN in your terminal; no Instagram login session is used.
 APIFY_ACTOR = "apify/instagram-scraper"

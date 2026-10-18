@@ -664,14 +664,15 @@ async def dangerous():
 
 
 @app.get("/api/getEventsDay")
-async def get_events_day(date: date) -> Dict[str, Any]:
-    events = await db.get_events_on_day(date)
+async def get_events_day(day: date) -> Dict[str, Any]:
+    events = await db.get_events_on_day(day)
     return {"events": events}
 
 
 @app.get("/api/getEventsFromDay")
 async def get_events_from_day(numdays: int = 7) -> Dict[str, Any]:
-    events = await db.get_events_from_start_for_days(date.today(), numdays)
+    from datetime import date as _date
+    events = await db.get_events_from_start_for_days(_date.today(), numdays)
     return {"events": events}
 
 
@@ -756,6 +757,8 @@ async def get_organizations() -> Dict[str, Any]:
             "id": o["id"],
             "name": o["name"],
             "description": o["description"],
+            "handle": o.get("handle"),
+            "conURL": o.get("conURL"),
         }
         for o in orgs
     ]
@@ -780,3 +783,8 @@ async def get_recommendations_organizations(
 ) -> Dict[str, Any]:
     # Placeholder: return empty list until recommendation logic is implemented
     return {"organizations": []}
+
+
+@app.get("/api/runscrape")
+async def get_recommendations_organizations() -> Dict[str, Any]:
+    

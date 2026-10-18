@@ -73,6 +73,9 @@ class TigerData:
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 );
             """)
+            await conn.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS handle TEXT;")
+            await conn.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS conurl TEXT;")
+            await conn.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
 
             # 3. Club Memberships table
             await conn.execute("""
@@ -180,19 +183,21 @@ class TigerData:
             await conn.execute("DELETE FROM users WHERE id = $1;", user_id)
 
     # ==================== ORGANIZATIONS & MEMBERSHIPS ====================
-    async def upsert_organization(self, name: str, description: str, metadata: Optional[Dict[str, Any]] = None) -> int:
+    async def upsert_organization(self, name: str, description: str, metadata: Optional[Dict[str, Any]] = None, handle: Optional[str] = None, conURL: Optional[str] = None) -> int:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO organizations (name, description, metadata, updated_at)
-                VALUES ($1, $2, $3::jsonb, NOW())
+                INSERT INTO organizations (name, description, metadata, handle, conurl, updated_at)
+                VALUES ($1, $2, $3::jsonb, $4, $5, NOW())
                 ON CONFLICT (name) 
                 DO UPDATE SET description = EXCLUDED.description, 
                               metadata = EXCLUDED.metadata, 
+                              handle = COALESCE(EXCLUDED.handle, organizations.handle),
+                              conurl = COALESCE(EXCLUDED.conurl, organizations.conurl),
                               updated_at = NOW()
                 RETURNING id;
                 """,
-                name, description, metadata or {}
+                name, description, metadata or {}, handle, conURL
             )
             return row["id"]
 
@@ -323,7 +328,9 @@ class TigerData:
     ) -> List[Dict[str, Any]]:
         if num_days < 0:
             num_days = 0
-        end_date = start_date + timedelta(days=num_days)
+        end_date = start_date + timedelta(days=num_days - 1) if num_days > 0 else start_date
+        if num_days <= 0:
+            end_date = start_date
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
                 SELECT id, organization_id, timestamp, title, description, address,
@@ -341,11 +348,11 @@ class TigerData:
     # ==================== ORGANIZATION MEMBERSHIP (FAVORITES) ====================
     async def get_organization(self, organization_id: int) -> Optional[Dict[str, Any]]:
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT id, name, description, metadata, created_at, updated_at FROM organizations WHERE id = $1;", organization_id)
+            row = await conn.fetchrow("SELECT id, name, description, metadata, handle, conurl, created_at, updated_at FROM organizations WHERE id = $1;", organization_id)
             return dict(row) if row else None
     async def get_all_organizations(self) -> List[Dict[str, Any]]:
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch("SELECT id, name, description, metadata, created_at, updated_at FROM organizations ORDER BY id ASC;")
+            rows = await conn.fetch("SELECT id, name, description, metadata, handle, conurl, created_at, updated_at FROM organizations ORDER BY id ASC;")
             return [dict(row) for row in rows]
 
 
@@ -353,7 +360,7 @@ class TigerData:
         """Return all organizations the user is a member of (their 'favorites')."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT o.id, o.name, o.description, o.metadata, o.updated_at,
+                SELECT o.id, o.name, o.description, o.metadata, o.handle, o.conurl, o.created_at, o.updated_at,
                        cm.role, cm.joined_at
                 FROM organizations o
                 JOIN club_memberships cm ON cm.organization_id = o.id

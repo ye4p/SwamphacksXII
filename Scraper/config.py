@@ -34,6 +34,13 @@ GATORCONNECT_MAX_CANDIDATES = 100  # Public detail pages per organization.
 GATORCONNECT_PAGE_SECONDS = 30
 GATORCONNECT_MEDIA_HOSTS = ("se-images.campuslabs.com",)
 
-# geocode.maps.co has its own key and rate limits, separate from Google Maps.
-# Adjust pacing to your account's quota; one resolver is shared by the run.
+# Legacy maps.co pacing, retained for its standalone module/tests.
+# Active Instagram and GatorConnect lookups use GOOGLE_MAPS_API_KEY (Places New).
 GEOCODE_MIN_INTERVAL_SECONDS = 1.1
+
+# GatorConnect keeps durable source/extraction state separately from the short
+# Instagram cache. Set GATORCONNECT_STATE_DIR to choose its runtime directory.
+GATORCONNECT_USE_GEMINI = True  # False uses source fields only; Tags stays [].
+GATORCONNECT_IMAGE_RECHECK_SECONDS = 3600  # Detect replaced flyers at the same URL.
+GATORCONNECT_RETRY_SECONDS = 4  # Failed enrichment can retry on a later run.
+GATORCONNECT_LOCATION_TTL_SECONDS = 7 * 86400  # Refresh successful geocoding weekly.

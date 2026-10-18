@@ -11,6 +11,24 @@ else:
     from config import REQUEST_SECONDS, RETRY_ATTEMPTS
 
 
+def lookup_fields(event):
+    """Prepare lookup text without changing source fields in the JSON output.
+
+    GatorConnect supplies full street addresses and room numbers. Prefer its
+    written address; only use a full_address that passed extraction validation.
+    An explicit address locality prevents adding an unrelated Gainesville hint.
+    """
+    lookup = dict(event)
+    lookup["address_text"] = event.get("address_text") or event.get("full_address")
+    venue = event.get("venue") or event.get("location") or ""
+    venue = re.split(r"\b(?:room|rm\.?|suite)\b|#", venue, flags=re.I)[0]
+    lookup["location"] = re.sub(r"\s+\d+[a-z]?\s*$", "", venue, flags=re.I).strip(" ,")
+    address = lookup["address_text"] or ""
+    if not lookup.get("city_text") and address.count(",") >= 2:
+        lookup["city_text"] = address.partition(",")[2].strip()
+    return lookup
+
+
 def place_matches(event, place, latitude, longitude):
     """Conservative matching: a search result is a candidate, not proof of identity."""
     def words(text):
@@ -57,12 +75,16 @@ def resolve_location(event):
         return resolved
 
     # Prefer the printed address; otherwise search for the printed venue name.
-    query = event.get("address_text") or event.get("location")
+    lookup_event = lookup_fields(event)
+    query = lookup_event.get("address_text") or lookup_event.get("location")
     if not isinstance(query, str) or not query.strip():
         resolved["location_warning"] = "No readable venue or street address."
         return resolved
-    city = event.get("city_text")
-    query = f"{query}, {city}" if city else f"{query}, University of Florida, Gainesville, FL"
+    city = lookup_event.get("city_text")
+    if city and city.casefold() not in query.casefold():
+        query = f"{query}, {city}"
+    elif not city and not (lookup_event.get("address_text") and "," in query):
+        query = f"{query}, University of Florida, Gainesville, FL"
     key = os.getenv("GOOGLE_MAPS_API_KEY")
     if not key:
         resolved.update(location_status="error",
@@ -111,18 +133,57 @@ def resolve_location(event):
                     or type(longitude) not in (int, float) or not -180 <= longitude <= 180
                     or not isinstance(address, str) or not address.strip()):
                 raise ScraperError("geocoding", "invalid_coordinates", "Maps returned incomplete or invalid coordinates/address.")
-            if not place_matches(event, place, latitude, longitude):
+            if not place_matches(lookup_event, place, latitude, longitude):
                 resolved.update(location_status="ambiguous",
                     location_warning="Returned place does not clearly match the source venue/address and city.")
             else:
                 resolved.update(address=address, latitude=latitude, longitude=longitude,
-                                location_status="resolved")
+                                location_status="resolved", location_provider="google_places")
     except (ScraperError, requests.RequestException, ValueError, TypeError, AttributeError) as error:
         # Do not expose HTTP exception details, which could include credentials.
         record = error_record(error, "geocoding")
         resolved.update(location_status="error", location_warning=record["message"],
                         location_error_code=record["code"])
     return resolved
+
+
+class PlacesResolver:
+    """Share Google lookups for repeated venues during one GatorConnect run.
+
+    Cache only location fields, not event titles/descriptions. Another club's
+    event must keep its own details even when it meets in the same building.
+    No maps.co key, reference table, or persistent maps.co cache is used here.
+    """
+
+    def __init__(self):
+        self.cache = {}
+        self.disabled = None
+
+    def close(self):
+        """Release transient lookup results when this run finishes."""
+        self.cache.clear()
+
+    def resolve(self, event):
+        lookup = lookup_fields(event)
+        key = tuple(lookup.get(field) for field in
+                    ("location_kind", "address_text", "location", "city_text"))
+        if key in self.cache:
+            return {**event, **self.cache[key]}
+        if self.disabled and event.get("location_kind") == "physical":
+            return {**event, **self.disabled}
+
+        result = resolve_location(event)
+        fields = {name: result[name] for name in
+                  ("address", "latitude", "longitude", "location_status", "location_warning",
+                   "location_error_code", "location_provider") if name in result}
+        if result.get("location_error_code") in {"missing_maps_key", "http_401", "http_403", "http_429"}:
+            # Repeated events cannot fix missing credentials or quota exhaustion.
+            # A fresh resolver on a later run can retry after the setup is fixed.
+            self.disabled = fields
+        elif result["location_status"] != "error":
+            self.cache[key] = fields
+        # Transient server failures stay retryable for a subsequent event/run.
+        return result
 
 
 

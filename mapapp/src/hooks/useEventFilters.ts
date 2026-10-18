@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { DEFAULT_EVENT_DAYS, type EventDays } from "../lib/eventRanges";
 import { useEvents } from "./useEvents";
 
-export const EVENT_TAGS = ["programming", "educational", "food", "sports", "run club", "ai"];
 export const DATE_RANGES = [
   { label: "Any time", days: 0 },
   { label: "Today", days: 1 },

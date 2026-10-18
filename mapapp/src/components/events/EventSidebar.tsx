@@ -1,4 +1,6 @@
-import { useLayoutEffect, useState } from "react";
+import { useEventDistances } from "../../hooks/useEventDistances";
+import { sortEvents, type EventSort } from "../../lib/eventSort";
+import { useLayoutEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useSidebarResize } from "../../hooks/useSidebarResize";
 import type { Event } from "../../types";
@@ -8,6 +10,7 @@ import EventCard from "./EventCard";
 
 interface Props {
   events: Event[];
+  userPosition: [number, number] | null;
   filters: Filters;
   onChange: (filters: Filters) => void;
   onReset: () => void;
@@ -15,12 +18,15 @@ interface Props {
   error: string | null;
   onSelect: (event: Event) => void;
 }
-export default function EventSidebar({ events, filters, onChange, onReset, loading, error, onSelect }: Props) {
+export default function EventSidebar({ events, userPosition, filters, onChange, onReset, loading, error, onSelect }: Props) {
   const { width, limits, resizing, handleProps } = useSidebarResize();
   const [collapsed, setCollapsed] = useState(false);
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<EventSort>("time");
+  const { distances } = useEventDistances(events, userPosition);
+  const sortedEvents = useMemo(() => sortEvents(events, sort, userPosition ? distances : []), [events, sort, distances, userPosition]);
   const pageSize = 3;
-  useLayoutEffect(() => setPage(1), [filters]);
+  useLayoutEffect(() => setPage(1), [filters, sort]);
   const pageCount = Math.max(1, Math.ceil(events.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const start = (currentPage - 1) * pageSize;
@@ -45,11 +51,12 @@ export default function EventSidebar({ events, filters, onChange, onReset, loadi
       </button>
       <div id="sidebar-content" className="sidebar-content" hidden={collapsed}>
         <div className="sidebar-heading"><div><h1>Swamp Search <span className="count-badge">{events.length}</span></h1></div></div>
-        <EventFilters filters={filters} onChange={onChange} onReset={onReset} />
+        <EventFilters filters={filters} onChange={onChange} onReset={onReset} sort={sort} onSortChange={setSort} />
+        {sort === "distance" && !userPosition && <p className="tag-hint" role="status">Allow location access to sort by distance. Showing earliest events for now.</p>}
         <div className="event-list" aria-busy={loading}>
           {loading && <p role="status">Loading events…</p>}
           {error && <p className="filter-error" role="alert">{error}</p>}
-          {events.slice(start, start + pageSize).map((event) => <EventCard key={event.id} event={event} onSelect={onSelect} />)}
+          {sortedEvents.slice(start, start + pageSize).map((event) => <EventCard key={event.id} event={event} onSelect={onSelect} />)}
           {!loading && !error && !events.length && <div className="empty-state"><h3>No events found</h3><p>Try another search, time range, or tag.</p><button className="outline-button" onClick={onReset}>Clear filters</button></div>}
         </div>
         <nav className="pagination" aria-label="Event pages">

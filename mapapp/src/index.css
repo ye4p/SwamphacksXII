@@ -53,7 +53,7 @@ input:focus { border-color: var(--focus); }
 .app-shell { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
 .app-header { display: grid; grid-template-columns: 1fr minmax(240px, 480px) 1fr; align-items: center; gap: 24px; padding: 4px 28px; background: #fff; border-bottom: 1px solid var(--border); z-index: 1001; }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--forest); font-size: 28px; font-weight: 750; white-space: nowrap; }
-.brand-logo { display: block; width: 90px; height: 90px; flex-shrink: 0; object-fit: contain; }
+.brand-logo { display: block; width: 116px; height: 90px; flex-shrink: 0; object-fit: contain; }
 .brand-wordmark { letter-spacing: -.8px; }
 .brand-wordmark > span { color: #64836a; font-weight: 500; }
 .brand small { display: block; color: var(--muted); font-size: 13px; font-weight: 400; margin-top: 2px; letter-spacing: .2px; }
@@ -142,7 +142,7 @@ input:focus { border-color: var(--focus); }
 }
 @media (max-width: 600px) {
   .brand { font-size: 23px; gap: 7px; }
-  .brand-logo { width: 48px; height: 48px; }
+  .brand-logo { width: 62px; height: 48px; }
   .brand small { display: none; }
   .auth-actions { gap: 4px; }
   .event-sidebar { position: absolute; right: 0; top: 0; bottom: 0; width: var(--sidebar-width, 420px); box-shadow: -4px 0 18px #254d3e15; }
@@ -163,3 +163,6 @@ input:focus { border-color: var(--focus); }
 .account-error { margin: 6px 0 0; font-size: 13px; color: #ab3545; overflow-wrap: anywhere; }
 .auth-configuration-error { max-width: 560px; padding: 32px; margin: 48px auto; }
 @media (max-width: 600px) { .account-identity { display: none; } }
+
+.sidebar-filter-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.sidebar-filter-row .date-filters { min-width: 0; }

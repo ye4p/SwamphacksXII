@@ -34,7 +34,7 @@ export default function App() {
     {isPage ? <DiscoveryPages pathname={location.pathname} search={location.search} onSearch={search} onBack={() => navigate("/")} onSelectEvent={(event) => { setFilters({ query: "", days: 30, tags: [] }); setSelectedEvent({ ...event }); navigate("/"); }} /> : (
     <main className="map-layout">
       <section className="map-region" aria-label="Map of events"><EventMap events={filteredEvents} userPosition={userPosition} selectedEvent={selectedEvent} /></section>
-      <EventSidebar events={filteredEvents} filters={filters} onChange={setFilters} onReset={resetFilters} loading={loading} error={error} onSelect={(event) => setSelectedEvent({ ...event })} />
+      <EventSidebar userPosition={userPosition} events={filteredEvents} filters={filters} onChange={setFilters} onReset={resetFilters} loading={loading} error={error} onSelect={(event) => setSelectedEvent({ ...event })} />
     </main>)}
   </div>;
 }

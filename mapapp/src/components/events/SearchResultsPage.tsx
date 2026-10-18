@@ -1,5 +1,7 @@
+import { useEventTags } from "../../hooks/useEventTags";
+import EventTagsStatus from "./EventTagsStatus";
 import { useMemo, useState } from "react";
-import { EVENT_TAGS, useEventFilters } from "../../hooks/useEventFilters";
+import { useEventFilters } from "../../hooks/useEventFilters";
 import EventRangeSelect from "./EventRangeSelect";
 import { eventRangeLabel } from "../../lib/eventRanges";
 import Header from "../layout/Header";
@@ -8,6 +10,7 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, { month: "short", day: 
 const timeFormatter = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 
 export default function SearchResultsPage() {
+  const { tags } = useEventTags();
   const query = new URLSearchParams(window.location.search).get("q") ?? "";
   const { filters, setFilters, filteredEvents, events, loading, error, resetFilters } = useEventFilters(query);
   const [sortOrder, setSortOrder] = useState<"soonest" | "latest">("soonest");
@@ -19,8 +22,8 @@ export default function SearchResultsPage() {
   }, [filteredEvents, sortOrder]);
 
   const tagCounts = useMemo(() => Object.fromEntries(
-    EVENT_TAGS.map((tag) => [tag, events.filter((event) => event.payload.tags?.includes(tag)).length]),
-  ), [events]);
+    tags.map((tag) => [tag, events.filter((event) => event.payload.tags?.includes(tag)).length]),
+  ), [events, tags]);
 
   return (
     <div className="app-shell results-shell">
@@ -45,8 +48,9 @@ export default function SearchResultsPage() {
               <EventRangeSelect id="results-time-range" days={filters.days} onChange={(days) => setFilters({ ...filters, days })} />
             </fieldset>
             <fieldset className="results-filter-group">
-              <legend>Event categories</legend>
-              {EVENT_TAGS.map((tag) => (
+              <legend>Tags</legend>
+              <EventTagsStatus />
+              {tags.map((tag) => (
                 <label className="results-checkbox" key={tag}>
                   <input
                     type="checkbox"

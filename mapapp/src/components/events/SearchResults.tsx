@@ -1,29 +1,11 @@
+import { useEventTags } from "../../hooks/useEventTags";
+import EventTagsStatus from "./EventTagsStatus";
 import { useMemo, useState } from "react";
 import { CalendarDays, Check, Heart, MapPin, SlidersHorizontal, X } from "lucide-react";
 import type { Event } from "../../types";
 import type { Organization } from "../../lib/organizations";
 import { useAuth } from "../../hooks/useAuth";
 const DATE_RANGES = [{ label: "Next 30 days", days: 0 }, { label: "Today", days: 1 }, { label: "This week", days: 7 }, { label: "Next two weeks", days: 14 }];
-
-const categories = [
-  { label: "Career", tags: ["career"], color: "Career" },
-  { label: "Arts & culture", tags: ["arts", "culture", "music"], color: "Arts & culture" },
-  { label: "Food & drink", tags: ["food"], color: "Food & drink" },
-  { label: "Music", tags: ["music"], color: "Music" },
-  { label: "Programming", tags: ["programming", "coding", "hackathon"], color: "Programming" },
-];
-
-const tagOptions = ["Hackathons", "Networking", "Open source", "Social"];
-const eventTags: Record<string, string[]> = {
-  Hackathons: ["hackathon", "hackathons"],
-  Networking: ["networking"],
-  "Open source": ["open source", "open-source"],
-  Social: ["social"],
-};
-
-function matchesAny(tags: string[], terms: string[]) {
-  return terms.some((term) => tags.includes(term));
-}
 
 function eventDate(timestamp: string) {
   return new Intl.DateTimeFormat("en-US", { weekday: "long", hour: "numeric", minute: "2-digit" }).format(new Date(timestamp));
@@ -33,18 +15,14 @@ function eventTime(timestamp: string) {
   return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(timestamp));
 }
 
-function getCategory(tags: string[]) {
-  return categories.find((category) => matchesAny(tags, category.tags))?.label ?? "Community";
-}
-
 function getLocation(event: Event) {
   return event.address.split(",")[0] || "University of Florida";
 }
 
 export default function SearchResults({ events, organizations, query, onModeChange }: { events: Event[]; organizations: Organization[]; query: string; onModeChange: (mode: "events" | "organizations") => void }) {
+  const { tags: tagOptions } = useEventTags();
   const { favorites, favoritesLoading, favoritesError } = useAuth();
   const getHost = (event: Event) => organizations.find((org) => org.id === event.organization_id)?.name ?? "University of Florida";
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedHosts, setSelectedHosts] = useState<string[]>([]);
   const [hostSearch, setHostSearch] = useState("");
@@ -64,8 +42,7 @@ export default function SearchResults({ events, organizations, query, onModeChan
       const searchable = [event.title, event.description, event.address, ...tags].join(" ").toLocaleLowerCase();
       const date = new Date(event.timestamp);
       return (!needle || searchable.includes(needle))
-        && (!selectedCategories.length || selectedCategories.includes(getCategory(tags)))
-        && (!selectedTags.length || selectedTags.some((tag) => matchesAny(tags, eventTags[tag] ?? [])))
+        && (!selectedTags.length || selectedTags.some((tag) => event.payload?.tags?.includes(tag)))
         && (!selectedHosts.length || selectedHosts.includes(getHost(event)))
         && (!selectedLocations.length || selectedLocations.includes(getLocation(event)))
         && (!dateRange || (date >= rangeStart && date < rangeEnd))
@@ -75,23 +52,15 @@ export default function SearchResults({ events, organizations, query, onModeChan
       : sortOrder === "title"
         ? left.title.localeCompare(right.title)
         : Date.parse(left.timestamp) - Date.parse(right.timestamp));
-  }, [events, query, selectedCategories, selectedTags, selectedHosts, selectedLocations, dateRange, sortOrder, favoritesOnly, favorites, organizations]);
+  }, [events, query, selectedTags, selectedHosts, selectedLocations, dateRange, sortOrder, favoritesOnly, favorites, organizations]);
 
-  const categoryCounts = (tags: string[]) => events.filter((event) =>
-    (!query.trim() || [event.title, event.description, event.address, ...(event.payload?.tags ?? [])].join(" ").toLowerCase().includes(query.trim().toLowerCase()))
-      && matchesAny((event.payload?.tags ?? []).map((tag) => tag.toLowerCase()), tags),
-  ).length;
-  const tagCounts = (label: string) => events.filter((event) => matchesAny(
-    (event.payload?.tags ?? []).map((tag) => tag.toLowerCase()),
-    eventTags[label] ?? [],
-  )).length;
+  const tagCounts = (tag: string) => events.filter((event) => event.payload?.tags?.includes(tag)).length;
   const hosts = [...new Set(events.map(getHost))];
   const matchingHosts = hosts.filter((host) => host.toLocaleLowerCase().includes(hostSearch.trim().toLocaleLowerCase()));
   const locations = [...new Set(events.map(getLocation))];
-  const activeFilterCount = selectedCategories.length + selectedTags.length + selectedHosts.length + selectedLocations.length + Number(dateRange > 0);
+  const activeFilterCount = selectedTags.length + selectedHosts.length + selectedLocations.length + Number(dateRange > 0);
 
   const clearFilters = () => {
-    setSelectedCategories([]);
     setSelectedTags([]);
     setSelectedHosts([]);
     setSelectedLocations([]);
@@ -143,11 +112,8 @@ export default function SearchResults({ events, organizations, query, onModeChan
             </div>
           </section>
           <section className="results-filter-group">
-            <h2>Event categories</h2>
-            {categories.map(({ label, tags }) => toggleCheckbox(label, categoryCounts(tags), selectedCategories, setSelectedCategories))}
-          </section>
-          <section className="results-filter-group">
             <h2>Tags</h2>
+            <EventTagsStatus />
             {tagOptions.map((label) => toggleCheckbox(label, tagCounts(label), selectedTags, setSelectedTags))}
           </section>
           <section className="results-filter-group">
@@ -190,7 +156,6 @@ export default function SearchResults({ events, organizations, query, onModeChan
           {(activeFilterCount > 0 || query) && <div className="active-filters" aria-label="Active filters">
             {query && <span className="filter-chip">{query}</span>}
             {dateRange > 0 && <button className="filter-chip" onClick={() => setDateRange(0)}>{DATE_RANGES.find((range) => range.days === dateRange)?.label}<X size={12} /></button>}
-            {selectedCategories.map((item) => <button className="filter-chip" key={item} onClick={() => toggle(item, selectedCategories, setSelectedCategories)}>{item}<X size={12} /></button>)}
             {selectedTags.map((item) => <button className="filter-chip" key={item} onClick={() => toggle(item, selectedTags, setSelectedTags)}>{item}<X size={12} /></button>)}
             {selectedHosts.map((item) => <button className="filter-chip" key={item} onClick={() => toggle(item, selectedHosts, setSelectedHosts)}>{item}<X size={12} /></button>)}
             {selectedLocations.map((item) => <button className="filter-chip" key={item} onClick={() => toggle(item, selectedLocations, setSelectedLocations)}>{item}<X size={12} /></button>)}
@@ -208,7 +173,7 @@ export default function SearchResults({ events, organizations, query, onModeChan
                   <div className="results-event-info">
                     <span className="host-badge">Hosted by {getHost(event)}</span>
                     <h2>{event.title}</h2>
-                    <p className="results-event-meta">{getCategory((event.payload?.tags ?? []).map((tag) => tag.toLowerCase()))} · {event.payload?.tags?.slice(0, 2).join(" · ") || "Community"}</p>
+                    <p className="results-event-meta">{event.payload?.tags?.slice(0, 2).join(" · ") || "Community"}</p>
                   </div>
                 </div>
                 <p className="results-event-description">{event.description || "No description provided."}</p>

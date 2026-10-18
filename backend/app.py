@@ -301,7 +301,7 @@ async def scheduled_scraping_job():
     loop = asyncio.get_running_loop()
     
     # Use ThreadPoolExecutor to run individual club/platform scrapers in parallel
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=1) as executor:
         futures = []
         task_metadata = []
         
@@ -359,7 +359,7 @@ async def scheduled_scraping_job():
     print(f"Found {len(unique_events)} unique new events!")
 
     for v in unique_events:
-        db.add_event(
+        await db.add_event(
             timestamp=v["timestamp"], 
             title=v["title"], 
             description=v["description"], 

@@ -507,29 +507,6 @@ async def read_me(
 # -----------------------------------------------------------------------------
 # Example protected resources using TigerData
 # -----------------------------------------------------------------------------
-@app.get("/events")
-async def list_events(
-    current_user: Dict[str, Any] = Depends(get_current_user),
-) -> Dict[str, Any]:
-    events = await db.get_current_events()
-    return {"events": events}
-
-
-@app.post("/events", status_code=status.HTTP_201_CREATED)
-async def create_event(
-    event: EventIn,
-    current_user: Dict[str, Any] = Depends(get_current_user),
-) -> Dict[str, Any]:
-    event_id = await db.add_event(
-        timestamp=event.timestamp,
-        title=event.title,
-        longitude=event.longitude,
-        latitude=event.latitude,
-        organization_id=event.organization_id,
-        payload=event.payload,
-    )
-    return {"id": event_id}
-
 
 @app.get("/admin/members")
 async def admin_members(

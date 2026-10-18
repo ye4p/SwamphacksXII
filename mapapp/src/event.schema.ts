@@ -12,6 +12,6 @@ export interface Event {
 
 export interface Payload {
   notes: string,
-  tags: string[],
+  tags?: string[],
 }
 

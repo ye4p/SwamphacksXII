@@ -16,8 +16,8 @@ function MapPosition({ position }: { position: [number, number] | null }) {
 function EventMarker({ event, selection }: { event: Event; selection: Event | null }) {
   const marker = useRef<L.Marker>(null);
   const map = useMap();
-  useEffect(() => { if (selection?.id === event.id) { map.setView([event.lat, event.lng], Math.max(map.getZoom(), config.map.defaultZoom)); marker.current?.openPopup(); } }, [event, selection, map]);
-  return <Marker ref={marker} position={[event.lat, event.lng]} icon={eventIcon}><Popup><EventPopup event={event} /></Popup></Marker>;
+  useEffect(() => { if (selection?.id === event.id) { map.setView([event.latitude, event.longitude], Math.max(map.getZoom(), config.map.defaultZoom)); marker.current?.openPopup(); } }, [event, selection, map]);
+  return <Marker ref={marker} position={[event.latitude, event.longitude]} icon={eventIcon}><Popup><EventPopup event={event} /></Popup></Marker>;
 }
 export default function EventMap({ events, userPosition, selectedEvent }: { events: Event[]; userPosition: [number, number] | null; selectedEvent: Event | null }) {
   const apiKey = import.meta.env.VITE_CARTO_API;

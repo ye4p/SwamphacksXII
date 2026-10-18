@@ -14,7 +14,17 @@ export function useEvents() {
       .then((res) => {
         if (!cancelled) {
           console.log("data collected");
-          setEvents(res.data.events ?? []);
+          console.log(res.data);
+          // setEvents(res.data.events ?? [])
+          const temp: Event[] = [];
+          
+          for (let i = 0; i < res.data.events.length; i++ ) {
+            temp.push(res.data.events[i]);
+          }
+
+          setEvents(temp);
+
+          console.log("data parsed successfully");
           setLoading(false);
         }
       })
@@ -27,6 +37,10 @@ export function useEvents() {
       });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    console.log(events);
+  }, [events])
 
   return { events, setEvents, loading, error };
 }

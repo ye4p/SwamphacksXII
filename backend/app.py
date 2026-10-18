@@ -56,6 +56,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 import httpx
 import bcrypt
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 
@@ -64,6 +65,8 @@ logger = logging.getLogger(__name__)
 from backend.core.tigerdata import TigerData
 
 from Scraper.main import run_scraper
+
+import asyncio
 
 # -----------------------------------------------------------------------------
 # Configuration
@@ -287,11 +290,92 @@ class EventIn(BaseModel):
 # -----------------------------------------------------------------------------
 # App
 # -----------------------------------------------------------------------------
+async def scheduled_scraping_job():
+    print("Starting scheduled scraping task...")
+    
+    # Await your async database calls natively
+    orgs = await db.get_all_organizations()
+    events = await db.get_current_events()
+    
+    platforms = ["instagram", "gatorconnect"]
+    loop = asyncio.get_running_loop()
+    
+    # Use ThreadPoolExecutor with asyncio to run blocking scrapers in parallel
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            loop.run_in_executor(
+                executor, 
+                run_scraper, 
+                platform, 
+                orgs, 
+                events, 
+                GetNewEventID
+            )
+            for platform in platforms
+        ]
+        
+        # Gather results concurrently
+        results_list = await asyncio.gather(*futures, return_exceptions=True)
+        
+    results = {}
+    all_events = []
+    for platform, res in zip(platforms, results_list):
+        if isinstance(res, Exception):
+            print(f"Error scraping {platform}: {res}")
+            results[platform] = {"error": str(res)}
+        else:
+            for v in res:
+                if isinstance(v.get("timestamp"), str):
+                    v["timestamp"] = datetime.fromisoformat(v["timestamp"].replace('Z', '+00:00'))
+            results[platform] = res
+            all_events.append(res)
+            print(f"Successfully scraped {platform}")
+
+    seen = set()
+    unique_events = []
+    
+    for event in all_events:
+        org_id = event.get("organization_id")
+        timestamp = event.get("timestamp")
+        
+        # Use a tuple of (organization_id, timestamp) as our uniqueness key
+        identifier = (org_id, timestamp)
+        
+        if identifier not in seen:
+            seen.add(identifier)
+            unique_events.append(event)
+    
+    print("Found " + len(unique_events) + " unique new events!")
+
+    for v in unique_events:
+        db.add_event(self, timestamp = v["timestamp"], title = v["title"], description = v["description"], address = v["address"], longitude = v["longitude"], latitude = v["latitude"], organization_id = v["organization_id"], payload = v["payload"])
+
+    print("Saved new events!")
+
+    return results
+
+async def background_scheduler_loop():
+    await asyncio.sleep(1800)
+    while True:
+        try:
+            await scheduled_scraping_job()
+        except Exception as e:
+            print(f"Background loop error: {e}")
+        
+        # Wait 30 seconds (Change to 1800 for 30 minutes in production)
+        await asyncio.sleep(60*60*3)
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await db.connect()
     await db.init_db()
+    task = asyncio.create_task(background_scheduler_loop())
     yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
     await db.close()
 
 
@@ -794,10 +878,13 @@ def GetNewEventID():
     return TOTALEVENTS
 
 @app.get("/api/runscrape")
-async def get_recommendations_organizations() -> Dict[str, Any]:
-    orgs = await db.get_all_organizations()
-    print("finished getting orgs")
-    events = await db.get_current_events()
-    print("finished getting all orgs, and events")
-    results = run_scraper("instagram", orgs, events, GetNewEventID)
-    return {"results": results}
+async def get_recommendations_organizations(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    if current_user.get("system_role", "user") != "admin":
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Unauthorized"
+        )
+    results = await scheduled_scraping_job()
+    return {"status": "success", "results": results}
+

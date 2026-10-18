@@ -55,10 +55,10 @@ def duplicate_keys(event):
     if isinstance(instant, str):
         instant = datetime.fromisoformat(instant.replace('Z', '+00:00'))
 
-    print("datetime 2")
+    # print("datetime 2")
     if instant.tzinfo is None or instant.utcoffset() is None:
         raise ValueError('Event timestamps must include a timezone offset or Z.')
-    print("datetime 3")
+    # print("datetime 3")
     instant = instant.astimezone(timezone.utc)
     return (event['organization_id'], instant), (normalize_title(event.get('title')), instant)
 
@@ -95,7 +95,7 @@ def run(source, organizations, existing_events, create_event_id):
     sys.exit here. The supplied snapshot is authoritative. Cached GatorConnect
     records must be included because a previous CLI run is not proof of a DB save.
     """
-    print("running")
+    # print("running")
     if not isinstance(source, str):
         raise ValueError('source must be instagram or gatorconnect.')
     source = re.sub(r'[\s_-]', '', source.casefold())
@@ -105,20 +105,20 @@ def run(source, organizations, existing_events, create_event_id):
         raise ValueError('create_event_id must be a synchronous zero-argument callable.')
     if not isinstance(existing_events, list):
         raise ValueError('existing_events must be an Event[] list.')
-    print("got through checks")
+    # print("got through checks")
     selected = select_organizations(source, organizations)
     club_times, title_times, used_ids = set(), set(), set()
-    print("1")
+    # print("1")
     for event in existing_events:
-        print("looking at event: ", event)
+        # print("looking at event: ", event)
         club_key, title_key = duplicate_keys(event)
-        print("got dipplicates down")
+        # print("got dipplicates down")
         if not positive_id(event.get('id')):
             raise ValueError('Every existing event needs a valid id.')
         club_times.add(club_key)
         title_times.add(title_key)
         used_ids.add(event['id'])
-    print("2")
+    # print("2")
     if not selected:
         return []  # Never fall back to config organizations when input is empty.
     check_output_settings()
@@ -181,7 +181,7 @@ def collect_and_allocate(source, selected, club_times, title_times, used_ids, cr
                                   issues + [{'stage': 'id_allocation', 'message': 'Callback failed.'}]) from None
         if inspect.iscoroutine(event_id):
             event_id.close()  # Do not leave an unawaited coroutine warning behind.
-        print(f"\n\n\nUSING EVENTID: {event_id} | used ids: {used_ids}\n\n\n\n")
+        # print(f"\n\n\nUSING EVENTID: {event_id} | used ids: {used_ids}\n\n\n\n")
         if not positive_id(event_id) or event_id in used_ids:
             raise ScraperRunError('Event ID callback returned an invalid or already-used ID.', events,
                                   issues + [{'stage': 'id_allocation', 'message': 'Invalid or reused ID.'}])

@@ -524,7 +524,7 @@ button.filter-chip { cursor: pointer; }
 .theme-dark .beginner-badge, .theme-dark .organization-heading-copy p + p { background: #35443b; color: #c5d4c8; }
 .theme-dark .organization-event-summary strong, .theme-dark .organization-event-summary svg,
 .theme-dark .organization-details p, .theme-dark .organization-details time { color: #c0d1c3; }
-.theme-dark .organization-card-footer .organization-gatorconnect-link { color: #b5d0b7; }
+.theme-dark .organization-gatorconnect-link { color: #b5d0b7; }
 .theme-dark .organization-details, .theme-dark .results-event-footer { border-color: #46554c; }
 .theme-dark .results-empty, .theme-dark .results-footer-note { color: #aab7ae; }
 .theme-dark .results-empty-icon { background: #35443b; color: #b5d0b7; }
@@ -562,8 +562,8 @@ button.filter-chip { cursor: pointer; }
 .organization-next-event { overflow: hidden; margin: 6px 0 0; color: #637267; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .organization-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
 .beginner-badge { padding: 3px 6px; border-radius: 4px; background: #f1f4f1; color: #788579; font-size: 9px; }
-.organization-card-footer .organization-gatorconnect-link { display: inline-flex; align-items: center; gap: 3px; padding: 3px 0; color: #3c5d42; font-size: 9px; font-weight: 650; text-decoration: none; white-space: nowrap; }
-.organization-card-footer .organization-gatorconnect-link:hover { text-decoration: underline; }
+.organization-gatorconnect-link { display: inline-flex; align-self: flex-start; align-items: center; gap: 3px; margin: 7px 0 0; padding: 3px 0; color: #3c5d42; font-size: 9px; font-weight: 650; text-decoration: none; white-space: nowrap; }
+.organization-gatorconnect-link:hover { text-decoration: underline; }
 .organization-card-footer button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 0; border: 0; background: transparent; color: #3c5d42; font-size: 10px; font-weight: 650; }
 .organization-card-footer button:hover { text-decoration: underline; }
 .organization-details { margin-top: 10px; padding-top: 9px; border-top: 1px solid #edf1eb; color: #425a47; font-size: 11px; }

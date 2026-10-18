@@ -205,7 +205,7 @@ export default function OrganizationResults({
               <button className="outline-button" onClick={clearFilters}>Clear filters</button>
             </div>
           )}
-          {matchingOrganizations.length > 0 && <p className="results-footer-note"><span aria-hidden="true">✓</span> You&apos;ve seen all {matchingOrganizations.length} matches. Your next community could be right here.</p>}
+          {matchingOrganizations.length > 0 && <p className="results-footer-note"><span aria-hidden="true">✓</span> You&apos;ve seen all {matchingOrganizations.length} matches.</p>}
         </section>
       </div>
     </main>
@@ -246,6 +246,9 @@ function OrganizationCard({
           <Heart size={17} fill={favorite ? "currentColor" : "none"} />
         </button>
       </div>
+      <a className="organization-gatorconnect-link" href={organization.gatorConnectUrl} target="_blank" rel="noreferrer" aria-label={`Open ${organization.name} on GatorConnect`}>
+        GatorConnect <ExternalLink size={12} />
+      </a>
       <p className="organization-description">{organization.description}</p>
       <div className="organization-event-summary">
         <strong><CalendarDays size={13} /> {organization.events.length} upcoming {organization.events.length === 1 ? "event" : "events"}</strong>
@@ -254,9 +257,6 @@ function OrganizationCard({
       {nextEvent && <p className="organization-next-event">Next up · {nextEvent.title}</p>}
       <footer className="organization-card-footer">
         {organization.beginnerFriendly && <span className="beginner-badge">Beginner friendly</span>}
-        <a className="organization-gatorconnect-link" href={organization.gatorConnectUrl} target="_blank" rel="noreferrer" aria-label={`Open ${organization.name} on GatorConnect`}>
-          GatorConnect <ExternalLink size={12} />
-        </a>
         <button onClick={onExpand}>{expanded ? "Hide details" : "View organization"} <ArrowRight size={14} /></button>
       </footer>
       {expanded && (

@@ -48,9 +48,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-# from passlib.context import CryptContext
 from pydantic import BaseModel
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -83,15 +81,15 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 COOKIE_NAME = os.getenv("COOKIE_NAME", "session_token")
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
-CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", FRONTEND_URL).split(",") if o.strip()]
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
+_CORS_DEFAULT = f"{FRONTEND_URL},http://localhost:3000,http://localhost:5173"
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", _CORS_DEFAULT).split(",") if o.strip()]
 
 ISSUER = f"https://{AUTH0_DOMAIN}/" if AUTH0_DOMAIN else ""
 
 # -----------------------------------------------------------------------------
 # Security helpers
 # -----------------------------------------------------------------------------
-# pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 _jwks_cache: Dict[str, Dict[str, Any]] = {}
 
@@ -182,7 +180,7 @@ def _set_session_cookie(response: Response, token: str) -> None:
         token,
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite="lax",
+        samesite=COOKIE_SAMESITE,
         path="/",
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
@@ -499,6 +497,13 @@ async def logout(response: Response) -> Dict[str, str]:
 
 @app.get("/auth/me")
 async def read_me(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    return user_public(current_user)
+
+
+@app.get("/api/auth/me")
+async def read_me_api(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     return user_public(current_user)

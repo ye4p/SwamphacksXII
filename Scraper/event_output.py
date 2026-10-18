@@ -123,6 +123,7 @@ def format_event(event, post, *, organization_id=None, defer_id=False):
         timestamp = start.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
     else:
         timestamp = event_timestamp(event)
+    timestampe = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
     title, address = event.get('title'), event.get('address')
     if not isinstance(title, str) or not title.strip():
         raise ValueError('An event title is required.')

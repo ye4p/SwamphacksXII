@@ -787,7 +787,7 @@ async def get_recommendations_organizations(
     # Placeholder: return empty list until recommendation logic is implemented
     return {"organizations": []}
 
-TOTALEVENTS = 0
+TOTALEVENTS = 5
 def GetNewEventID():
     global TOTALEVENTS
     TOTALEVENTS += 1
@@ -796,5 +796,8 @@ def GetNewEventID():
 @app.get("/api/runscrape")
 async def get_recommendations_organizations() -> Dict[str, Any]:
     orgs = await db.get_all_organizations()
+    print("finished getting orgs")
     events = await db.get_current_events()
-    return run_scraper("instagram", orgs, events, GetNewEventID)
+    print("finished getting all orgs, and events")
+    results = run_scraper("instagram", orgs, events, GetNewEventID)
+    return {"results": []}

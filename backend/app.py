@@ -29,7 +29,7 @@ import os
 import secrets
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 from urllib.parse import quote, urlencode
 
@@ -50,11 +50,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+# from passlib.context import CryptContext
 from pydantic import BaseModel
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 import httpx
+import bcrypt
 
 load_dotenv()
 
@@ -89,7 +90,7 @@ ISSUER = f"https://{AUTH0_DOMAIN}/" if AUTH0_DOMAIN else ""
 # -----------------------------------------------------------------------------
 # Security helpers
 # -----------------------------------------------------------------------------
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 _jwks_cache: Dict[str, Dict[str, Any]] = {}
@@ -319,7 +320,8 @@ async def register(
         )
 
     email = email.strip().lower()
-    password_hash = pwd_context.hash(password)
+    salt = bcrypt.gensalt(rounds=12)
+    password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
     from asyncpg.exceptions import UniqueViolationError
 
@@ -350,7 +352,7 @@ async def login(
     if (
         not user
         or not user.get("password_hash")
-        or not pwd_context.verify(password, user["password_hash"])
+        or not bcrypt.checkpw(password.encode('utf-8'), user["password_hash"].encode('utf-8'))
     ):
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "Invalid email or password"
@@ -534,3 +536,73 @@ async def admin_members(
     current_user: Dict[str, Any] = Depends(require_role("mod", "admin")),
 ) -> Dict[str, Any]:
     return {"message": "admin area", "user": user_public(current_user)}
+
+@app.get("/api/dangerous")
+async def dangerous():
+    """TEMPORARY DEV-ONLY: wipe the database and seed a default admin user,
+    one sample organization, and a few sample events around 2026-10-17."""
+    await db.wipe_database()
+
+    # Default admin user (email/password login)
+    salt = bcrypt.gensalt(rounds=12) 
+    admin_password_hash = bcrypt.hashpw(("admin123").encode('utf-8'), salt).decode('utf-8')
+    admin_id = await db.create_local_user(
+        "admin@swamphacks.com",
+        admin_password_hash,
+        "admin",
+        {"name": "Default Admin"},
+    )
+
+    # Sample organization
+    org_id = await db.upsert_organization(
+        "Swamphacks Organizing Committee",
+        "Main student organizing body for Swamphacks XII",
+        {"type": "student_org", "room": "CSE 201"},
+    )
+    await db.assign_membership(admin_id, org_id, "president")
+
+    # Sample events around 2026-10-17 (today)
+    sample_events = [
+        ("2026-10-17 10:00:00+00", "Opening Ceremony", "Opening ceremony description wow nice", "test lane 1", -82.3536, 29.6516, {"notes": "Main auditorium"}),
+        ("2026-10-17 14:00:00+00", "Kickoff Hackathon", "kickoff hackaton description wow nice", "test lane 2", -82.3540, 29.6520, {"notes": "Bring laptops"}),
+        ("2026-10-18 09:00:00+00", "Workshop: Intro to FastAPI", "workshop description wow nice", "test lane 3", -82.3530, 29.6510, {"notes": "Room 101"}),
+        ("2026-10-19 16:00:00+00", "Mentor Office Hours", "mentor office hours description wow nice", "test lane 4", -82.3536, 29.6516, {"notes": "Drop-in"}),
+        ("2026-10-20 12:00:00+00", "Midpoint Check-in", "midpoint checkin description wow nice", "test lane 5", -82.3540, 29.6520, {"notes": "Pizza provided"}),
+    ]
+    for ts, title, description, address, lon, lat, payload in sample_events:
+        await db.add_event(
+            timestamp=ts,
+            title=title,
+            description=description,
+            address=address,
+            longitude=lon,
+            latitude=lat,
+            organization_id=org_id,
+            payload=payload,
+        )
+
+    return {
+        "message": "Database wiped and seeded",
+        "admin_user": {"id": admin_id, "email": "admin@swamphacks.com", "system_role": "admin"},
+        "organization_id": org_id,
+    }
+
+
+@app.get("/api/getEventsDay")
+async def get_events_day(date: date) -> Dict[str, Any]:
+    events = await db.get_events_on_day(date)
+    return {"events": events}
+
+
+@app.get("/api/getEventsFromDay")
+async def get_events_from_day(startdate: date) -> Dict[str, Any]:
+    events = await db.get_events_from_day(startdate)
+    return {"events": events}
+
+
+@app.get("/api/fetchFavorites")
+async def fetch_favorites(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    orgs = await db.get_user_organizations(current_user["id"])
+    return {"organizations": orgs}

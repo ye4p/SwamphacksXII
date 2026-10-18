@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/Avatar";
 
-export default function AccountControls() {
+export default function AccountControls({ onProfileClick }: { onProfileClick: () => void }) {
   const { isLoading, isAuthenticated, error, login, logout, user, refetch } = useAuth();
   const [pending, setPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -29,14 +29,13 @@ export default function AccountControls() {
     <div className="account-controls">
       <nav className="auth-actions" aria-label="Account" aria-busy={isLoading || pending}>
         {isLoading ? <span className="account-status" role="status">Loading account…</span> : isAuthenticated ? <>
-            <span className="account-profile" title={user?.email ?? user?.name ?? undefined}>
+            <button type="button" onClick={onProfileClick} className="account-profile profile-nav-button" title={user?.email ?? user?.name ?? undefined}>
             <Avatar className="account-avatar">
               {user?.picture ? <AvatarImage src={user.picture} alt={user?.name ?? user?.email ?? "User avatar"} /> : null}
               <AvatarFallback>{initials}</AvatarFallback>
             </Avatar>
-            <span className="account-identity"><strong>{user?.name ?? "Your account"}</strong>{user?.email && <small>{user.email}</small>}</span>
-          </span>
-          <button type="button" className="outline-button" disabled={pending} onClick={() => void authenticate("logout")}>Log out</button>
+            <span>Profile</span>
+          </button>
         </> : <>
           <button type="button" className="text-button" disabled={pending} onClick={() => void authenticate("login")}>Log in / Sign up</button>
         </>}

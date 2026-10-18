@@ -24,7 +24,7 @@ export default function SearchResultsPage() {
 
   return (
     <div className="app-shell results-shell">
-      <Header query={filters.query} onSearch={(value) => window.location.assign(`/search?q=${encodeURIComponent(value.trim())}`)} />
+      <Header onProfileClick={() => window.location.assign("/profile")} onSearch={(value) => window.location.assign(`/search?q=${encodeURIComponent(value.trim())}`)} />
       <main className="results-page">
         <nav className="results-breadcrumb" aria-label="Breadcrumb">
           <a href="/">Explore campus</a><span aria-hidden="true">/</span><span>Events</span>

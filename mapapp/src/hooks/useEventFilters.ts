@@ -3,6 +3,14 @@ import { DEFAULT_EVENT_DAYS, type EventDays } from "../lib/eventRanges";
 import { useEvents } from "./useEvents";
 
 export const EVENT_TAGS = ["programming", "educational", "food", "sports", "run club", "ai"];
+export const DATE_RANGES = [
+  { label: "Any time", days: 0 },
+  { label: "Today", days: 1 },
+  { label: "This Week", days: 7 },
+  { label: "Within 2 weeks", days: 14 },
+  { label: "Within 3 weeks", days: 21 },
+  { label: "Within 4 weeks", days: 28 },
+] as const;
 export interface EventFilters {
   query: string;
   days: EventDays;

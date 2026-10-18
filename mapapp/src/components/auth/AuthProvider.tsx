@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { AuthContext } from "../../hooks/useAuth";
 import { apiErrorMessage, apiUrl } from "../../lib/api";
 import { endSession, getCurrentUser, type User } from "../../lib/auth";
-import { getFavorites, type FavoriteOrganization } from "../../lib/favorites";
+import { getFavorites, setFavorite, type FavoriteOrganization } from "../../lib/favorites";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -85,8 +85,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
+  const updateFavorite = useCallback(async (id: number, favorite: boolean) => {
+    if (userId === undefined) throw new Error("Log in to save favorites.");
+    const favorites = await setFavorite(id, favorite);
+    setFavoritesState({ userId, favorites, error: null });
+  }, [userId]);
+
   return <AuthContext.Provider value={{
-    user, isAuthenticated: user !== null, isLoading, error, login, logout, refetch,
+    user, isAuthenticated: user !== null, isLoading, error, login, logout, refetch, updateFavorite,
     favorites: currentFavorites?.favorites ?? [],
     favoritesLoading: user !== null && currentFavorites === null,
     favoritesError: currentFavorites?.error ?? null,

@@ -11,6 +11,7 @@ export interface AuthState {
   favorites: FavoriteOrganization[];
   favoritesLoading: boolean;
   favoritesError: string | null;
+  updateFavorite: (id: number, favorite: boolean) => Promise<void>;
   login: () => void;
   logout: () => Promise<void>;
   refetch: () => Promise<void>;

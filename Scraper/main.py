@@ -29,9 +29,13 @@ def main():
     parser.add_argument("--caption", default="", help="That post's caption")
     parser.add_argument("--source", choices=("instagram", "gatorconnect"),
                         default="instagram", help="Public event source (default: instagram)")
+    parser.add_argument("--include-unchanged", action="store_true",
+                        help="GatorConnect: also output saved unchanged selected events")
     args = parser.parse_args()
     if args.images and args.source != "instagram":
         parser.error("--images is the existing Instagram saved-image mode; omit --source.")
+    if args.include_unchanged and args.source != "gatorconnect":
+        parser.error("--include-unchanged applies only to --source gatorconnect.")
     if args.images:
         # This mode tests Gemini without contacting Instagram.
         try:
@@ -47,7 +51,7 @@ def main():
                     from .gatorconnect_pipeline import scrape_gatorconnect
                 else:
                     from gatorconnect_pipeline import scrape_gatorconnect
-                result = scrape_gatorconnect()
+                result = scrape_gatorconnect(include_unchanged=args.include_unchanged)
             else:
                 result = scrape_events()
         except Exception as error:
@@ -57,10 +61,13 @@ def main():
     # Schedulers need a meaningful process status, including degraded Maps results.
     events = result.get("events", []) + [event for post in result.get("posts", [])
                                         for event in post.get("events", [])]
-    failed = bool(result.get("errors")) or any(event.get("location_status") == "error" for event in events)
+    failed = (bool(result.get("errors")) or bool(result.get("deferred_posts"))
+              or any(warning.get("partial_results") for warning in result.get("warnings", []))
+              or any(event.get("location_status") == "error" for event in events))
     if failed:
         # A successfully processed non-event also counts as a successful post.
-        partial = bool(events or result.get("processed_posts", 0))
+        partial = bool(events or result.get("processed_posts", 0)
+                       or result.get("unchanged_posts", 0) or result.get("deferred_posts", 0))
         sys.exit(2 if partial else 1)
     # No events, no errors is a successful empty result (exit 0).
 

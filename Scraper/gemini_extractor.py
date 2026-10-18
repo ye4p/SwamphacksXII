@@ -20,7 +20,7 @@ else:
 
 
 # --- Gemini: read images and return event information ---
-def extract_events(images, caption="", *, source_type="instagram", enrich=True):
+def extract_events(images, caption="", *, source_type="instagram", enrich=True, use_cache=True):
     """Extract one source item; existing Instagram calls still include Maps.
 
     GatorConnect passes text and optional images with enrich=False, then checks
@@ -38,11 +38,13 @@ def extract_events(images, caption="", *, source_type="instagram", enrich=True):
         raise ScraperError("image_validation", "image_size", "Use images totaling at most 10 MB.")
 
     images = [(data, image_mime(data)) for data, _ in images]
-    model = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+    model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
     # Source identity participates in caching, so identical text from different
     # extraction modes cannot accidentally share a differently prompted result.
     key = cache_key(images, caption, model, source_type=source_type)
-    cached = cached_extraction(key)
+    # GatorConnect's durable revision store can manage extraction reuse instead
+    # of relying on this short-lived cache. Instagram retains the default.
+    cached = cached_extraction(key) if use_cache else None
     if cached is not None:
         # Revalidate cached model data and refresh Maps; never cache map results.
         try:
@@ -178,5 +180,6 @@ def extract_events(images, caption="", *, source_type="instagram", enrich=True):
     except ValueError:
         raise ScraperError("validation", "invalid_json", "Gemini did not return valid JSON.") from None
     validated = validate_extraction(extracted, caption, source_type=source_type)
-    cached_extraction(key, extracted)
+    if use_cache:
+        cached_extraction(key, extracted)
     return enrich_locations(validated) if enrich else validated

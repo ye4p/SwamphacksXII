@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -141,14 +142,15 @@ class PipelineTests(unittest.TestCase):
         self.assertIsNone(result["events"][0]["full_address"])
         self.assertEqual(result["events"][0]["venue"], "Little Hall")
 
-    def test_text_only_and_non_event_make_no_geocoding_calls(self):
+    def test_empty_ai_result_preserves_approved_source_event(self):
         resolver = MagicMock()
         with patch.object(pipeline, "extract_events", return_value={"image_text": "", "events": []}) as extract:
             processed, errors = pipeline.process_gatorconnect_post(post(), resolver)
         self.assertEqual(extract.call_args.args[0], [])
         self.assertEqual(extract.call_args.kwargs, {"source_type": "gatorconnect", "enrich": False})
-        self.assertEqual(processed["events"], [])
-        resolver.resolve.assert_not_called()
+        self.assertEqual(processed["enrichment_status"], "pending")
+        self.assertEqual(len(errors), 1)
+        resolver.resolve.assert_called_once()
 
     def test_optional_flyer_failure_retains_text(self):
         item = post()
@@ -162,10 +164,13 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
 
     def test_one_failed_event_does_not_discard_next(self):
-        with patch.dict(os.environ, {"GEMINI_API_KEY": "test"}), \
+        with TemporaryDirectory() as state_dir, \
+                patch.dict(os.environ, {"GEMINI_API_KEY": "test", "GATORCONNECT_STATE_DIR": state_dir}), \
                 patch.object(pipeline, "collect_gatorconnect", return_value={"posts": [post("1"), post("2")], "errors": []}), \
-                patch.object(pipeline, "GeocodeResolver"), \
-                patch.object(pipeline, "process_gatorconnect_post", side_effect=[ValueError(), ({**post("2"), "events": [event()]}, [])]):
+                patch.object(pipeline, "PlacesResolver") as resolver, \
+                patch.object(pipeline, "source_fields", side_effect=[ValueError(), pipeline.source_fields(post("2"))]), \
+                patch.object(pipeline, "extract_events", return_value={"image_text": "", "events": [event()]}):
+            resolver.return_value.resolve.side_effect = lambda e: {**e, "location_status": "resolved"}
             result = pipeline.scrape_gatorconnect()
         self.assertEqual(result["processed_posts"], 1)
         self.assertEqual(len(result["posts"]), 1)
@@ -251,7 +256,7 @@ class GeocodingTests(unittest.TestCase):
     @patch("Scraper.geocode_resolver.time.sleep")
     def test_transient_failure_retries_but_is_not_cached(self, sleep):
         resolver = self.resolver()
-        resolver.session.get.side_effect = [response([], 503), response([], 429), response([PLACE])]
+        resolver.session.get.side_effect = [response([], 503), response([], 503), response([PLACE])]
         self.assertEqual(resolver.resolve(event())["location_status"], "error")
         self.assertEqual(resolver.resolve(event())["location_status"], "resolved")
         self.assertEqual(resolver.session.get.call_count, 3)

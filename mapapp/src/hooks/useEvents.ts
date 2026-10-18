@@ -1,46 +1,25 @@
 import { useState, useEffect } from "react";
 import type { Event } from "../types";
-import { api } from "../lib/api";
+import { apiErrorMessage } from "../lib/api";
+import { getEvents } from "../lib/events";
+import type { EventDays } from "../lib/eventRanges";
 
-export function useEvents() {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    console.log('trying to make api call')
-    let cancelled = false;
-    api.get("/api/getEventsDay" + "?date=2026-10-17")
-      .then((res) => {
-        if (!cancelled) {
-          console.log("data collected");
-          console.log(res.data);
-          // setEvents(res.data.events ?? [])
-          const temp: Event[] = [];
-          
-          for (let i = 0; i < res.data.events.length; i++ ) {
-            temp.push(res.data.events[i]);
-          }
-
-          setEvents(temp);
-
-          console.log("data parsed successfully");
-          setLoading(false);
-        }
-      })
-      .catch((cause: any) => {
-        if (!cancelled) {
-          console.log("fail data collection");
-          setError(cause?.response?.data?.detail || "Unable to load events.");
-          setLoading(false);
-        }
-      });
-    return () => { cancelled = true; };
-  }, []);
+export function useEvents(days: EventDays) {
+  const [result, setResult] = useState<{ days: EventDays; events: Event[]; error: string | null } | null>(null);
 
   useEffect(() => {
-    console.log(events);
-  }, [events])
+    const controller = new AbortController();
+    setResult(null);
+    getEvents(days, controller.signal).then((events) => {
+      if (!controller.signal.aborted) setResult({ days, events, error: null });
+    }).catch((cause: unknown) => {
+      if (!controller.signal.aborted) {
+        setResult({ days, events: [], error: apiErrorMessage(cause, "Unable to load events.") });
+      }
+    });
+    return () => controller.abort();
+  }, [days]);
 
-  return { events, setEvents, loading, error };
+  const current = result?.days === days ? result : null;
+  return { events: current?.events ?? [], loading: current === null, error: current?.error ?? null };
 }

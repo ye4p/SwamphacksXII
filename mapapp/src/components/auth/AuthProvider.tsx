@@ -2,12 +2,42 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { AuthContext } from "../../hooks/useAuth";
 import { apiErrorMessage, apiUrl } from "../../lib/api";
 import { endSession, getCurrentUser, type User } from "../../lib/auth";
+import { getFavorites, type FavoriteOrganization } from "../../lib/favorites";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const request = useRef(0);
+  const [favoritesState, setFavoritesState] = useState<{
+    userId: number;
+    favorites: FavoriteOrganization[];
+    error: string | null;
+  } | null>(null);
+  const userId = user?.id;
+
+  useEffect(() => {
+    setFavoritesState(null);
+    if (userId === undefined) return;
+
+    const controller = new AbortController();
+    getFavorites(controller.signal).then((favorites) => {
+      if (!controller.signal.aborted) {
+        setFavoritesState({ userId, favorites, error: null });
+      }
+    }).catch((cause: unknown) => {
+      if (!controller.signal.aborted) {
+        setFavoritesState({
+          userId, favorites: [],
+          error: apiErrorMessage(cause, "Unable to load favorites."),
+        });
+      }
+    });
+    return () => controller.abort();
+  }, [userId]);
+
+  // Never expose a previous account's data while a new request is starting.
+  const currentFavorites = favoritesState?.userId === userId ? favoritesState : null;
 
   const refetch = useCallback(async () => {
     const current = ++request.current;
@@ -55,7 +85,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
-  return <AuthContext.Provider value={{ user, isAuthenticated: user !== null, isLoading, error, login, logout, refetch }}>
+  return <AuthContext.Provider value={{
+    user, isAuthenticated: user !== null, isLoading, error, login, logout, refetch,
+    favorites: currentFavorites?.favorites ?? [],
+    favoritesLoading: user !== null && currentFavorites === null,
+    favoritesError: currentFavorites?.error ?? null,
+  }}>
     {children}
   </AuthContext.Provider>;
 }

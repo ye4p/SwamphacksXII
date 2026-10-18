@@ -1,19 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import hardcodedEvents from "../../data/events";
+import { useMemo, useState } from "react";
 import { EVENT_TAGS, useEventFilters } from "../../hooks/useEventFilters";
-import { useEvents } from "../../hooks/useEvents";
+import EventRangeSelect from "./EventRangeSelect";
+import { eventRangeLabel } from "../../lib/eventRanges";
 import Header from "../layout/Header";
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 const timeFormatter = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 
 export default function SearchResultsPage() {
-  const { events, setEvents } = useEvents();
   const query = new URLSearchParams(window.location.search).get("q") ?? "";
-  const { filters, setFilters, filteredEvents, invalidRange, resetFilters } = useEventFilters(events);
+  const { filters, setFilters, filteredEvents, events, loading, error, resetFilters } = useEventFilters(query);
   const [sortOrder, setSortOrder] = useState<"soonest" | "latest">("soonest");
 
-  useEffect(() => setEvents(hardcodedEvents), [setEvents]);
 
   const sortedEvents = useMemo(() => {
     if (sortOrder === "soonest") return filteredEvents;
@@ -43,12 +41,8 @@ export default function SearchResultsPage() {
           <aside className="results-filters" aria-label="Filter events">
             <div className="results-filter-heading"><h2>Filter events</h2><span aria-hidden="true">☷</span></div>
             <fieldset className="results-filter-group">
-              <legend>Dates</legend>
-              <label htmlFor="results-from">From</label>
-              <input id="results-from" type="date" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })} />
-              <label htmlFor="results-to">To</label>
-              <input id="results-to" type="date" value={filters.to} onChange={(event) => setFilters({ ...filters, to: event.target.value })} />
-              {invalidRange && <p className="filter-error" role="alert">End date must be on or after start date.</p>}
+              <legend>Time range</legend>
+              <EventRangeSelect id="results-time-range" days={filters.days} onChange={(days) => setFilters({ ...filters, days })} />
             </fieldset>
             <fieldset className="results-filter-group">
               <legend>Event categories</legend>
@@ -81,15 +75,12 @@ export default function SearchResultsPage() {
                 </select>
               </label>
             </div>
-            {(filters.from || filters.to || filters.tags.length > 0) && (
-              <div className="results-active-filters">
-                {filters.from && <span className="tag">{dateFormatter.format(new Date(`${filters.from}T00:00:00`))}</span>}
-                {filters.to && <span className="tag">{dateFormatter.format(new Date(`${filters.to}T00:00:00`))}</span>}
-                {filters.tags.map((tag) => <span className="tag" key={tag}>{tag}</span>)}
-                <button className="text-button" type="button" onClick={resetFilters}>Clear filters</button>
-              </div>
-            )}
-            {sortedEvents.length ? (
+            <div className="results-active-filters">
+              <span className="tag">{eventRangeLabel(filters.days)}</span>
+              {filters.tags.map((tag) => <span className="tag" key={tag}>{tag}</span>)}
+              <button className="text-button" type="button" onClick={resetFilters}>Clear filters</button>
+            </div>
+            {loading ? <p role="status">Loading events…</p> : error ? <p className="filter-error" role="alert">{error}</p> : sortedEvents.length ? (
               <div className="results-grid">
                 {sortedEvents.map((event) => {
                   const date = new Date(event.timestamp);

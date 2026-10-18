@@ -24,6 +24,9 @@ class RevisionTests(unittest.TestCase):
         self.addCleanup(self.environment.stop)
         self.clock = patch("Scraper.gatorconnect_pipeline.time.time", return_value=1000).start()
         self.addCleanup(patch.stopall)
+        # Epoch-based retry clocks cross New Year in US timezones. Keep this
+        # suite focused on TTL/retry behavior; year invalidation is tested separately.
+        patch.object(pipeline, "current_year", return_value=2026).start()
         self.collected = {"posts": [post()], "errors": []}
         self.collect = patch.object(pipeline, "collect_gatorconnect", side_effect=lambda *args, **kwargs: deepcopy(self.collected)).start()
         self.extract = patch.object(pipeline, "extract_events", side_effect=lambda *a, **k: {"image_text": "", "events": [event()]}).start()

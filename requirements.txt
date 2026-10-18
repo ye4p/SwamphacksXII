@@ -1,3 +1,6 @@
+# Includes Instagram/GatorConnect scraping, OCR compression, and .env loading.
+# After pip install: python -m playwright install chromium
+# Linux servers may need: python -m playwright install --with-deps chromium
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1

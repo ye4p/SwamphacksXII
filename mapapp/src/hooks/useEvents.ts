@@ -10,7 +10,7 @@ export function useEvents() {
   useEffect(() => {
     console.log('trying to make api call')
     let cancelled = false;
-    api.get("/getEventsDay" + "?date=2026-10-17")
+    api.get("/api/getEventsDay" + "?date=2026-10-17")
       .then((res) => {
         if (!cancelled) {
           console.log("data collected");

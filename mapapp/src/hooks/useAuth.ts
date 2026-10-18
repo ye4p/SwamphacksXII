@@ -28,8 +28,8 @@ export function useAuth(): AuthState {
   const fetchMe = useCallback(async () => {
     setError(null);
     try {
-      const res = await api.get("/auth/me");
-      setUser(res.data.user);
+      const res = await api.get("/api/auth/me");
+      setUser(res.data);
     } catch (cause: any) {
       setUser(null);
       setError(cause?.response?.data?.detail || "Unable to load account.");

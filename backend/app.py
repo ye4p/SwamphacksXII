@@ -300,37 +300,49 @@ async def scheduled_scraping_job():
     platforms = ["instagram", "gatorconnect"]
     loop = asyncio.get_running_loop()
     
-    # Use ThreadPoolExecutor with asyncio to run blocking scrapers in parallel
+    # Use ThreadPoolExecutor to run individual club/platform scrapers in parallel
     with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = [
-            loop.run_in_executor(
-                executor, 
-                run_scraper, 
-                platform, 
-                orgs, 
-                events, 
-                GetNewEventID
-            )
-            for platform in platforms
-        ]
+        futures = []
+        task_metadata = []
         
-        # Gather results concurrently
+        # Loop through each organization and each platform individually
+        for org in orgs:
+            for platform in platforms:
+                # Passing [org] as a single-item list assuming run_scraper expects an iterable of orgs
+                futures.append(
+                    loop.run_in_executor(
+                        executor, 
+                        run_scraper, 
+                        platform, 
+                        [org], 
+                        events, 
+                        GetNewEventID
+                    )
+                )
+                task_metadata.append((platform, org))
+        
+        # Gather all individual scraper results concurrently, isolating exceptions
         results_list = await asyncio.gather(*futures, return_exceptions=True)
         
     results = {}
     all_events = []
-    for platform, res in zip(platforms, results_list):
+    
+    for (platform, org), res in zip(task_metadata, results_list):
+        org_id = org.get("id", org.get("name", "Unknown"))
+        
         if isinstance(res, Exception):
-            print(f"Error scraping {platform}: {res}")
-            results[platform] = {"error": str(res)}
+            print(f"Error scraping {platform} for org {org_id}: {res}")
+            # Optionally track per-org errors if needed
         else:
-            for v in res:
-                if isinstance(v.get("timestamp"), str):
-                    v["timestamp"] = datetime.fromisoformat(v["timestamp"].replace('Z', '+00:00'))
-                all_events.append(v)
-            results[platform] = res
-            print(f"Successfully scraped {platform}")
+            # If the scraper returned a list of events for this single org
+            if isinstance(res, list):
+                for v in res:
+                    if isinstance(v.get("timestamp"), str):
+                        v["timestamp"] = datetime.fromisoformat(v["timestamp"].replace('Z', '+00:00'))
+                    all_events.append(v)
+                print(f"Successfully scraped {platform} for org {org_id}")
 
+    # Deduplicate across all successful individual scrapes
     seen = set()
     unique_events = []
     
@@ -338,7 +350,6 @@ async def scheduled_scraping_job():
         org_id = event.get("organization_id")
         timestamp = event.get("timestamp")
         
-        # Use a tuple of (organization_id, timestamp) as our uniqueness key
         identifier = (org_id, timestamp)
         
         if identifier not in seen:
@@ -348,7 +359,16 @@ async def scheduled_scraping_job():
     print(f"Found {len(unique_events)} unique new events!")
 
     for v in unique_events:
-        db.add_event(timestamp = v["timestamp"], title = v["title"], description = v["description"], address = v["address"], longitude = v["longitude"], latitude = v["latitude"], organization_id = v["organization_id"], payload = v["payload"])
+        db.add_event(
+            timestamp=v["timestamp"], 
+            title=v["title"], 
+            description=v["description"], 
+            address=v["address"], 
+            longitude=v["longitude"], 
+            latitude=v["latitude"], 
+            organization_id=v["organization_id"], 
+            payload=v["payload"]
+        )
 
     print("Saved new events!")
 
@@ -922,7 +942,7 @@ async def get_organization(organization_id: int) -> Dict[str, Any]:
 
 @app.get("/api/gettags")
 async def get_tags() -> Dict[str, Any]:
-    return {"tags": []}
+    return {"tags": ["sports", "food included", "professional", "networking", "recreational", "STEM", "medicine"]}
 
 @app.get("/api/getOrganizations")
 async def get_organizations() -> Dict[str, Any]:

@@ -15,17 +15,18 @@ UF_BUILDING_ALIASES = {
     "TUR": "Turlington Hall",
     "Weimer": "Weimer Hall",
     "WEIM": "Weimer Hall",
-    "MAT": "Matherly Hall"
+    "MAT": "Matherly Hall",
+    "Turlington Hall": "Turlington Hall"
 }
 
 # Set APIFY_API_TOKEN in your terminal; no Instagram login session is used.
 APIFY_ACTOR = "apify/instagram-scraper"
 
 # Gemini may assign only these tags. Add or edit labels here to change the list.
-EVENT_TAGS = ["sports", "food included", "professional", "networking"]
+EVENT_TAGS = ["sports", "food included", "professional", "networking", "recreational", "STEM", "medicine"]
 
 # Explicit budgets keep a scheduled run from waiting or spending indefinitely.
-MAX_IMAGE_BYTES = 10 * 1024 * 1024  # Total compressed bytes per post.
+MAX_IMAGE_BYTES = 50 * 1024 * 1024  # Total compressed bytes per post.
 MAX_IMAGES = 20
 MAX_EVENTS = 20
 REQUEST_SECONDS = 30

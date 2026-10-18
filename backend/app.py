@@ -24,6 +24,7 @@ Required environment variables:
 
 import base64
 import hashlib
+import logging
 import os
 import secrets
 import time
@@ -55,6 +56,8 @@ import httpx
 import bcrypt
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 from core.tigerdata import TigerData
 
@@ -192,6 +195,36 @@ def _clear_session_cookie(response: Response) -> None:
 def _clear_auth0_cookies(response: Response) -> None:
     response.delete_cookie("auth0_state", path="/")
     response.delete_cookie("auth0_code_verifier", path="/")
+    response.delete_cookie("auth0_redirect_to", path="/")
+
+
+def _auth0_exchange_failure(token_response: httpx.Response) -> JSONResponse:
+    # Never log the request payload, raw response, code, verifier, or secret.
+    # Only expose known OAuth error identifiers and our own diagnostic text.
+    messages = {
+        "invalid_client": "Check the backend Auth0 client ID and secret, and set the application's Token Endpoint Authentication Method to Post.",
+        "unauthorized_client": "Check that the Auth0 application allows the Authorization Code grant and uses Token Endpoint Authentication Method Post.",
+        "access_denied": "Check the backend Auth0 client credentials and the application's Token Endpoint Authentication Method (this backend uses Post).",
+        "invalid_grant": "Start a fresh login. If this persists, check the callback URL and PKCE configuration; authorization codes expire and can only be used once.",
+        "invalid_request": "Check the Auth0 callback URL and token exchange configuration.",
+    }
+    try:
+        body = token_response.json()
+        error = body.get("error") if isinstance(body, dict) else None
+    except ValueError:
+        error = None
+    error = error if isinstance(error, str) and error in messages else "unknown_error"
+    logger.warning("Auth0 token exchange rejected: status=%s error=%s", token_response.status_code, error)
+    response = JSONResponse(
+        {
+            "detail": "Auth0 token exchange failed",
+            "auth0_error": error,
+            "hint": messages.get(error, "Check the Auth0 tenant logs for the failed code exchange."),
+        },
+        status_code=status.HTTP_400_BAD_REQUEST,
+    )
+    _clear_auth0_cookies(response)
+    return response
 
 
 # -----------------------------------------------------------------------------
@@ -431,7 +464,7 @@ async def auth0_callback(
     code: Optional[str] = Query(None),
     state: Optional[str] = Query(None),
     redirect_to: Optional[str] = Query(None),
-) -> RedirectResponse:
+) -> Response:
     expected_state = request.cookies.get("auth0_state")
     code_verifier = request.cookies.get("auth0_code_verifier")
 
@@ -441,6 +474,14 @@ async def auth0_callback(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Invalid Auth0 request state"
         )
+
+    if not code_verifier:
+        failure = JSONResponse(
+            {"detail": "Auth0 PKCE cookie is missing or expired. Start a fresh login."},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+        _clear_auth0_cookies(failure)
+        return failure
 
     token_payload = {
         "grant_type": "authorization_code",
@@ -457,11 +498,7 @@ async def auth0_callback(
         )
 
     if token_resp.status_code >= 400:
-        redirect = RedirectResponse(FRONTEND_URL)
-        _clear_auth0_cookies(redirect)
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Auth0 token exchange failed"
-        )
+        return _auth0_exchange_failure(token_resp)
 
     tokens = token_resp.json()
     id_token = tokens.get("id_token")
@@ -496,7 +533,6 @@ async def auth0_callback(
     redirect = RedirectResponse(target)
     _set_session_cookie(redirect, app_token)
     _clear_auth0_cookies(redirect)
-    redirect.delete_cookie("auth0_redirect_to", path="/")
     return redirect
 
 

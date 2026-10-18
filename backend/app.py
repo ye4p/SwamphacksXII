@@ -632,9 +632,10 @@ async def dangerous():
 
     # Sample organization
     org_id = await db.upsert_organization(
-        "Swamphacks Organizing Committee",
-        "Main student organizing body for Swamphacks XII",
+        "UF ACM",
+        "UF ACM CLUB",
         {"type": "student_org", "room": "CSE 201"},
+        handle = "uf.acm",
     )
     await db.assign_membership(admin_id, org_id, "president")
 

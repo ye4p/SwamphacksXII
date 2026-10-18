@@ -699,29 +699,115 @@ async def admin_members(
     return {"message": "admin area", "user": user_public(current_user)}
 
 @app.get("/api/dangerous")
-async def dangerous():
+async def dangerous(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    if current_user.get("system_role", "user") != "admin":
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Unauthorized"
+        ):
     """TEMPORARY DEV-ONLY: wipe the database and seed a default admin user,
     one sample organization, and a few sample events around 2026-10-17."""
     await db.wipe_database()
 
     # Default admin user (email/password login)
     salt = bcrypt.gensalt(rounds=12) 
-    admin_password_hash = bcrypt.hashpw(("admin123").encode('utf-8'), salt).decode('utf-8')
+    admin_password_hash = bcrypt.hashpw(("admin123*$").encode('utf-8'), salt).decode('utf-8')
     admin_id = await db.create_local_user(
-        "admin@swamphacks.com",
+        "admin@swamp-search.us",
         admin_password_hash,
         "admin",
         {"name": "Default Admin"},
     )
+    salt = bcrypt.gensalt(rounds=12) 
+    president_password_hash = bcrypt.hashpw(("president123*$").encode('utf-8'), salt).decode('utf-8')
+    president_id = await db.create_local_user(
+        "president@swamp-search.us",
+        president_password_hash,
+        "admin",
+        {"name": "Default President"},
+    )
+
+    def_org_id = await db.upsert_organization(
+        "UF Events",
+        "A default \"organization\" for random UF Events.",
+        {"type": "system_org"},
+    )
+    await db.assign_membership(admin_id, org_id, "president")
 
     # Sample organization
     org_id = await db.upsert_organization(
-        "UF ACM",
-        "UF ACM CLUB",
-        {"type": "student_org", "room": "CSE 201"},
+        "UF OSC",
+        """The Open Source Club (OSC) at UF is a community dedicated to building and supporting open-source software. Members collaborate through twice-weekly casual coding sessions, tech guest talks, resume reviews, and hackathons""",
+        {"type": "student_org"},
         handle = "uf.acm",
+        conURL = "https://gatorconnect.ufl.edu/organization/osc"
     )
-    await db.assign_membership(admin_id, org_id, "president")
+    await db.assign_membership(president_id, org_id, "president")
+    
+    
+    org_id = await db.upsert_organization(
+        "UF Pickleball Club",
+        "The UF Pickleball Club provides students of all skill levels an outlet to learn and play the sport through regular recreational and competitive practices. It fosters a community on campus by organizing club practices, tournaments, and social events.",
+        {"type": "student_org"},
+        handle = "ufclubpickleball",
+    )
+    await db.assign_membership(president_id, org_id, "president")
+
+    org_id = await db.upsert_organization(
+        "Peak Pulse",
+        "Peak Pulse is a social run club and wellness community welcoming all experience levels and paces. Beyond weekly runs and walks, the organization brings students together through wellness events, cold plunges, and social meetups.",
+        {"type": "student_org"},
+        handle = "peakpulsegville",
+    )
+    await db.assign_membership(president_id, org_id, "president")
+
+    org_id = await db.upsert_organization(
+        "University Math Society",
+        "UMS fosters a welcoming math community at UF through faculty talks, technical workshops, and career panels. It also hosts social events and annual traditions like the Integration Bee to make math engaging for all students.",
+        {"type": "student_org"},
+        handle = "universitymathsociety",
+        # conURL = "https://gatorconnect.ufl.edu/organization/ums"
+    )
+    await db.assign_membership(president_id, org_id, "president")
+
+    org_id = await db.upsert_organization(
+        "Gator Grill Club",
+        """Gator Grill Club brings UF students together to serve the community, host fundraisers, and cook meals for those in need. Through workshops, social tailgates, and grilling competitions, members build practical cooking skills and leadership in a welcoming environment.""",
+        {"type": "student_org"},
+        handle = "gatorgrillclub",
+        # conURL = "https://gatorconnect.ufl.edu/organization/gatorgrillclub"
+    )
+    await db.assign_membership(president_id, org_id, "president")
+
+
+    org_id = await db.upsert_organization(
+        "Society of Software Developers",
+        "SSD bridges classroom learning with industry practice through hands-on workshops, technical projects, and professional development. It offers an inclusive community for UF students to build real-world software engineering skills.",
+        {"type": "student_org"},
+        handle = "uf.ssd",
+        # conURL = "https://gatorconnect.ufl.edu/organization/ssd"
+    )
+    await db.assign_membership(president_id, org_id, "president")
+
+    org_id = await db.upsert_organization(
+        "Institute of Electrical & Electronics Engineers",
+        """The IEEE Student Branch connects students of all majors with a global engineering network through workshops, networking events, and competitions. It helps members develop technical and leadership skills while exploring career opportunities in engineering and technology.""",
+        {"type": "student_org"},
+        handle = "ieeeuf",
+        #conURL = "https://gatorconnect.ufl.edu/organization/ieee"
+    )
+    await db.assign_membership(president_id, org_id, "president")
+
+    org_id = await db.upsert_organization(
+        "Association for Computing Machinery",
+        "ACM at UF helps students break into the tech industry through weekly skill-building workshops, company recruiter events, and weekly office hours. It provides hands-on guidance to help students navigate the job market and land computer science roles.",
+        {"type": "student_org"},
+        handle = "uf.acm",
+        #conURL = "https://gatorconnect.ufl.edu/organization/acm"
+    )
+    await db.assign_membership(president_id, org_id, "president")
+    
 
     # Sample events around 2026-10-17 (today)
     sample_events = [
@@ -739,14 +825,14 @@ async def dangerous():
             address=address,
             longitude=lon,
             latitude=lat,
-            organization_id=org_id,
+            organization_id=def_org_id,
             payload=payload,
         )
 
     return {
         "message": "Database wiped and seeded",
-        "admin_user": {"id": admin_id, "email": "admin@swamphacks.com", "system_role": "admin"},
-        "organization_id": org_id,
+        "admin_user": {"id": admin_id, "email": "admin@swamp-search.us", "system_role": "admin"},
+        "def_organization_id": def_org_id,
     }
 
 
@@ -835,6 +921,10 @@ async def get_organization(organization_id: int) -> Dict[str, Any]:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Organization not found")
     return {"organization": org}
 
+
+@app.get("/api/gettags")
+async def get_tags() -> Dict[str, Any]:
+    return {"tags": []}
 
 @app.get("/api/getOrganizations")
 async def get_organizations() -> Dict[str, Any]:

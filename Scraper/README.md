@@ -1,3 +1,58 @@
+# Full GatorConnect import (no AI)
+
+From the repository root:
+
+```bash
+python3 push_gatorconnect.py --dry-run --report skipped.json > events.json
+python3 push_gatorconnect.py
+```
+
+Set `CONNECTION` in `backend/.env` to the PostgreSQL/PostGIS database DSN.
+Set `GOOGLE_MAPS_API_KEY` in the same file and enable Places API (New).
+The dry run performs real geocoding requests, using requests and python-dotenv;
+importing also needs asyncpg. No Gemini, OCR, or browser is used.
+
+`gatorconnect_feed.py` reads the public JSON feed used by
+https://gatorconnect.ufl.edu/events, paginates it, removes HTML with HTMLParser,
+and maps explicit source fields. It collects all public approved events returned
+by the site's default upcoming feed, with no club or 90-day filter, and imports
+only those with valid source or geocoded coordinates. It does not
+claim to include private events or historical events absent from that feed.
+HTTP failures are retried with backoff; malformed data, changing counts, or
+incomplete pagination abort before database writes. A legitimate empty feed is
+valid. The 1,000-page safety limit fails explicitly rather than truncating.
+
+`TigerData.import_gatorconnect_events` writes the mappable result in a transaction using batched statements,
+serializes concurrent imports with a PostgreSQL advisory lock, and matches stable
+source IDs (or exact Source lines from the previous importer) to update existing
+rows. Database sequences allocate IDs. Existing organization metadata is preserved.
+Removed/cancelled source events are not automatically deleted from the database.
+
+Missing source coordinates are resolved through the existing Google Places
+resolver. Lookups share results for repeated venues within a run, check venue or
+street-address agreement, and reject ambiguous results. The existing resolver
+uses Gainesville as the default locality. Unresolved, online-only, missing, or
+ambiguous locations are skipped, never saved with NULL or invented coordinates.
+`--report` writes the skipped source IDs and reasons. Progress goes to stderr;
+`--dry-run` emits only mappable events. The original venue and provider are saved
+in payload when geocoding succeeds. Dates retain their explicit timezone offsets.
+
+Both database write methods reject missing, nonnumeric, nonfinite, or out-of-range
+coordinates before executing SQL. `init_db` also installs a PostGIS coordinate
+CHECK constraint. Existing invalid rows must be repaired or removed before this
+constraint can be installed; startup deliberately fails rather than admitting
+invalid records. The previous 1,974 NULL-coordinate GatorConnect rows were removed
+from the configured database before enabling the constraint.
+Tags use the configured category/benefit mapping. Source ID, URL, organization ID,
+end time, and image path are retained in payload. Duplicate rows already created
+by older importers are not automatically deleted.
+
+The backend scheduled job calls this full-feed importer once per run, then runs
+its existing Instagram jobs. The older organization-only scraper remains available
+and now defaults to source-only parsing as well.
+
+---
+
 # Scraper
 
 ## Instagram OCR setup

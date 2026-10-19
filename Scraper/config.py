@@ -91,21 +91,16 @@ GEOCODE_MIN_INTERVAL_SECONDS = 1.1
 
 # GatorConnect keeps durable source/extraction state separately from the short
 # Instagram cache. Set GATORCONNECT_STATE_DIR to choose its runtime directory.
-GATORCONNECT_USE_GEMINI = True  # False uses source fields only; Tags stays [].
+GATORCONNECT_USE_GEMINI = False  # Organization scraper also uses explicit source fields.
 GATORCONNECT_IMAGE_RECHECK_SECONDS = 3600  # Detect replaced flyers at the same URL.
 GATORCONNECT_RETRY_SECONDS = 4  # Failed enrichment can retry on a later run.
 GATORCONNECT_LOCATION_TTL_SECONDS = 7 * 86400  # Refresh successful geocoding weekly.
 
-# GatorConnect global /events feed. The public discovery API serves every
-# upcoming event in one unauthenticated request, so no browser or Gemini is
-# needed. Set False to skip this feed and rely only on per-organization URLs.
-GATORCONNECT_GLOBAL_ENABLED = True
+# Public global listing: paginate until its reported total is accounted for.
+# No local organization/date filter; the source defines its upcoming window.
 GATORCONNECT_GLOBAL_URL = "https://gatorconnect.ufl.edu/api/discovery/event/search"
-GATORCONNECT_GLOBAL_TAKE = 2000  # Single-request page size; the API caps at ~2000.
-GATORCONNECT_GLOBAL_DAYS_AHEAD = 90  # Only events starting within this window.
-GATORCONNECT_GLOBAL_MIN_RESULTS = 10  # Below this the run is treated as degraded.
-GATORCONNECT_GLOBAL_MAX_RESULTS = 2000  # Hard cap on events pushed per run.
-GATORCONNECT_GLOBAL_TIMEOUT_SECONDS = 60  # HTTP timeout for the discovery request.
+GATORCONNECT_GLOBAL_TAKE = 2000
+GATORCONNECT_GLOBAL_TIMEOUT_SECONDS = 60
 
 # Map GatorConnect theme/category labels to the app's tag vocabulary. Labels not
 # listed here are dropped; the app's own tag list is the source of truth.

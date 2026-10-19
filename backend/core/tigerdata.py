@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 from datetime import date, datetime, timedelta
 import asyncpg
 import os
@@ -9,6 +10,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 CONNECTION = os.getenv("CONNECTION")
+
+
+def require_coordinates(longitude, latitude):
+    if not all(type(value) in (int, float) and math.isfinite(value)
+               and -bound <= value <= bound
+               for value, bound in ((longitude, 180), (latitude, 90))):
+        raise ValueError("Events require finite, in-range longitude and latitude")
 
 class TigerData:
     def __init__(self, dsn: str = CONNECTION):
@@ -105,6 +113,20 @@ class TigerData:
             """)
             await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS address TEXT;")
             await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS description TEXT NOT NULL;")
+            await conn.execute("""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                                   WHERE conname = 'events_valid_coordinates'
+                                     AND conrelid = 'events'::regclass) THEN
+                        ALTER TABLE events ADD CONSTRAINT events_valid_coordinates CHECK (
+                            location IS NOT NULL AND NOT ST_IsEmpty(location)
+                            AND ST_X(location) IS NOT NULL AND ST_Y(location) IS NOT NULL
+                            AND ST_X(location) BETWEEN -180 AND 180
+                            AND ST_Y(location) BETWEEN -90 AND 90
+                        );
+                    END IF;
+                END $$;
+            """)
 
             # Performance Indexes
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_users_auth0 ON users(auth0_id);")
@@ -248,7 +270,65 @@ class TigerData:
                 )
 
     # ==================== EVENTS ====================
+    async def import_gatorconnect_events(self, events: List[Dict[str, Any]]) -> int:
+        """Atomically insert/update mappable public events using stable source IDs.
+
+        Serialize imports across workers. Existing organization metadata is never
+        replaced by the sparse listing. PostgreSQL allocates all local IDs.
+        """
+        for event in events:
+            require_coordinates(event.get("longitude"), event.get("latitude"))
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock(71620261018)")
+                names = sorted({e["organization_name"] for e in events if e.get("organization_name")})
+                await conn.executemany("""
+                    INSERT INTO organizations (name) VALUES ($1)
+                    ON CONFLICT (name) DO NOTHING
+                """, [(name,) for name in names])
+                organizations = {r["name"]: r["id"] for r in await conn.fetch(
+                    "SELECT id, name FROM organizations WHERE name=ANY($1::text[])", names)}
+                # One snapshot under the import lock avoids thousands of remote
+                # SELECT round trips. Recognize the old Source note format too.
+                by_source, by_note = {}, {}
+                for row in await conn.fetch("SELECT id, payload FROM events ORDER BY id"):
+                    payload = row["payload"] or {}
+                    if payload.get("source") == "gatorconnect":
+                        by_source.setdefault(payload.get("source_event_id"), row["id"])
+                    for line in (payload.get("notes") or "").splitlines():
+                        by_note.setdefault(line, row["id"])
+                inserts, updates, seen = [], [], set()
+                for event in events:
+                    payload = event["payload"]
+                    identity = payload["source_event_id"]
+                    if identity in seen:
+                        raise ValueError("Duplicate source ID in import batch")
+                    seen.add(identity)
+                    existing_id = by_source.get(identity) or by_note.get("Source: " + payload["source_url"])
+                    values = (organizations.get(event.get("organization_name")),
+                              datetime.fromisoformat(event["timestamp"]),
+                              event["title"], event["description"], event["address"],
+                              event["longitude"], event["latitude"], payload)
+                    if existing_id is None:
+                        inserts.append(values)
+                    else:
+                        updates.append((*values, existing_id))
+                await conn.executemany("""
+                    INSERT INTO events
+                        (organization_id, timestamp, title, description, address, location, payload)
+                    VALUES ($1,$2,$3,$4,$5,ST_SetSRID(ST_MakePoint($6,$7),4326),$8::jsonb)
+                """, inserts)
+                await conn.executemany("""
+                    UPDATE events SET organization_id=$1, timestamp=$2, title=$3,
+                        description=$4, address=$5,
+                        location=ST_SetSRID(ST_MakePoint($6,$7),4326),
+                        payload=COALESCE(payload, '{}'::jsonb) || $8::jsonb
+                    WHERE id=$9
+                """, updates)
+        return len(events)
+
     async def add_event(self, timestamp: Union[str, datetime], title: str, description: str, address: str, longitude: float, latitude: float, organization_id: Optional[int] = None, payload: Optional[Dict[str, Any]] = None) -> int:
+        require_coordinates(longitude, latitude)
         if isinstance(timestamp, str):
             timestamp = datetime.fromisoformat(timestamp)
 

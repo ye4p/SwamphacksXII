@@ -292,12 +292,18 @@ class EventIn(BaseModel):
 # -----------------------------------------------------------------------------
 async def scheduled_scraping_job():
     print("Starting scheduled scraping task...")
+    from Scraper.gatorconnect_feed import import_events
+    try:
+        count = await import_events(db)
+        print(f"Imported {count} public GatorConnect events")
+    except Exception:
+        logging.exception("GatorConnect import failed")
     
     # Await your async database calls natively
     orgs = await db.get_all_organizations()
     events = await db.get_current_events()
     
-    platforms = ["instagram", "gatorconnect"]
+    platforms = ["instagram"]
     loop = asyncio.get_running_loop()
     
     # Use ThreadPoolExecutor to run individual club/platform scrapers in parallel
@@ -1033,4 +1039,3 @@ async def addInsta():
         # conURL = "https://gatorconnect.ufl.edu/organization/ssd"
     )
     await db.assign_membership(2, org_id, "president")
-    
